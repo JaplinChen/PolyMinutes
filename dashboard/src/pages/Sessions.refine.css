@@ -77,6 +77,41 @@
   opacity: 1;
 }
 
+/* Same hover-to-reveal as the rerun button, on every line rather than only the failed ones: 943
+   rows each carrying two visible buttons is a toolbar, not a transcript. */
+.sess-page .sess-body {
+  position: relative;
+}
+
+.sess-page .sess-trans-tools {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.sess-page .sess-line:hover .sess-trans-tools,
+.sess-page .sess-trans-tools:focus-within {
+  opacity: 1;
+}
+
+.sess-page .sess-trans-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.sess-page .sess-trans-btn:disabled,
 .sess-page .sess-rerun:disabled {
   cursor: not-allowed;
   opacity: 0.4;

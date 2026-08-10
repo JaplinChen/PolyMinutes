@@ -1,6 +1,6 @@
-import { memo } from 'react';
+import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Play, RotateCw, Square } from 'lucide-react';
+import { ChevronDown, ChevronRight, Languages, Play, RotateCw, Square } from 'lucide-react';
 import type { TranscriptLine } from '../../services/app.api';
 
 const clock = (seconds: number) => {
@@ -25,13 +25,16 @@ interface Props {
   onDraft: (draft: { id: number; text: string } | null) => void;
   onSave: (lineId: number, source: string, previous: string) => void;
   onRerun: (lineId: number) => void;
+  onRetranslate: (lineId: number) => void;
   onPlay: (lineId: number) => void;
   onReassign: (lineId: number, speaker: string) => void;
 }
 
-function Row({ line, speakerOptions, newSpeakerCode, langs, locked, draftText, isRerunning, rerunBlocked, isPlaying, playable, onDraft, onSave, onRerun, onPlay, onReassign }: Props) {
+function Row({ line, speakerOptions, newSpeakerCode, langs, locked, draftText, isRerunning, rerunBlocked, isPlaying, playable, onDraft, onSave, onRerun, onRetranslate, onPlay, onReassign }: Props) {
   const { t } = useTranslation();
   const editing = draftText === null ? null : { id: line.id, text: draftText };
+  const [shown, setShown] = useState(true);
+  const has = langs.some(l => line.translations[l]);
 
   return (
     <article data-line-id={line.id} className={`sess-line${line.status === 'ok' ? '' : ' sess-line-failed'}`}>
@@ -117,7 +120,32 @@ function Row({ line, speakerOptions, newSpeakerCode, langs, locked, draftText, i
             {line.source}
           </p>
         )}
-        {langs
+        {/* Icon-only and out of the flow: labelled buttons pushed every translation down a line and
+            turned a 943-row transcript into a column of toolbars. */}
+        <div className="sess-trans-tools">
+          {has && (
+            <button
+              type="button"
+              className="sess-trans-btn"
+              title={t(shown ? 'sessions.hideTranslation' : 'sessions.showTranslation')}
+              aria-label={t(shown ? 'sessions.hideTranslation' : 'sessions.showTranslation')}
+              onClick={() => setShown(s => !s)}
+            >
+              {shown ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+            </button>
+          )}
+          <button
+            type="button"
+            className="sess-trans-btn"
+            disabled={rerunBlocked || locked}
+            title={isRerunning ? t('sessions.retranslating') : t('sessions.retranslateLine')}
+            aria-label={t('sessions.retranslateLine')}
+            onClick={() => onRetranslate(line.id)}
+          >
+            <Languages size={13} />
+          </button>
+        </div>
+        {shown && langs
           .filter(l => line.translations[l])
           .map(l => (
             <p key={l} className="sess-translation" lang={l}>

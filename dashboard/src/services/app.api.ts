@@ -211,6 +211,10 @@ export const appApi = {
   rerunLine: (id: number, lineId: number) =>
     request<{ lines: TranscriptLine[]; speakers: Record<string, string>; status: LineStatus }>(
       `/sessions/${id}/lines/${lineId}/rerun`, { method: 'POST' }),
+  // Translation only: the source stays exactly as it is, so a hand-corrected line keeps its wording.
+  retranslateLine: (id: number, lineId: number) =>
+    request<{ lines: TranscriptLine[]; speakers: Record<string, string>; status: LineStatus }>(
+      `/sessions/${id}/lines/${lineId}/retranslate`, { method: 'POST' }),
   // Re-derives the whole transcript from the recording with the largest model. Every line is
   // replaced, so anything corrected by hand since the meeting is overwritten.
   sessionSummary: (id: number) => request<MeetingSummary>(`/sessions/${id}/summary`),
