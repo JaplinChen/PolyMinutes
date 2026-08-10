@@ -58,6 +58,24 @@ def test_build_prompt_asks_for_one_language_with_rules_and_excerpt_note():
     assert "excerpt" not in S.build_prompt(lines, "vi", "- my rule", sampled=False)
 
 
+def test_build_prompt_injects_reference_as_background_before_the_transcript():
+    lines = [SummaryLine("S1", "zh", "hello")]
+    prompt = S.build_prompt(lines, "en", "-", reference="Agenda: Q3 采购计划\nAttendees: 廖仁成")
+    assert "廖仁成" in prompt and "Q3 采购计划" in prompt
+    assert "context only, not spoken" in prompt
+    # Reference sits ahead of the transcript so the model reads the meeting's own terms first.
+    assert prompt.index("廖仁成") < prompt.index("S1(zh): hello")
+    # No reference given → no background block at all.
+    assert "Background notes" not in S.build_prompt(lines, "en", "-")
+
+
+def test_build_prompt_truncates_an_overlong_reference():
+    lines = [SummaryLine("S1", "zh", "hi")]
+    prompt = S.build_prompt(lines, "en", "-", reference="x" * 5000)
+    assert "x" * S.REFERENCE_BUDGET in prompt
+    assert "x" * (S.REFERENCE_BUDGET + 1) not in prompt
+
+
 def test_build_prompt_targets_original_total_not_sampled():
     lines = [SummaryLine("S1", "zh", "x" * 100)]
     prompt = S.build_prompt(lines, "en", "-", sampled=True, total_chars=24_000)

@@ -52,6 +52,8 @@ export function Sessions() {
   const [summary, setSummary] = useState<MeetingSummary | null>(null);
   const [sumLang, setSumLang] = useState<string | null>(null);
   const [summarizing, setSummarizing] = useState(false);
+  const [reference, setReference] = useState('');
+  const [savingRef, setSavingRef] = useState(false);
   const tablistRef = useRef<HTMLDivElement>(null);
   const player = useRef<HTMLAudioElement | null>(null);
   // Read inside the callback so it does not have to depend on `playing` — a callback that changes
@@ -212,6 +214,29 @@ export function Sessions() {
       fail(err);
     } finally {
       setSummarizing(false);
+    }
+  };
+
+  // Keep the reference box in step with the picked session. `current?.reference` is a plain string,
+  // so this fires only when the session or its stored notes actually change, not on every render.
+  useEffect(() => {
+    setReference(current?.reference ?? '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, current?.reference]);
+
+  // Pre-meeting notes are folded into the summary prompt when it regenerates — not applied to the
+  // current summary, which the user regenerates if they want them included.
+  const saveReference = async () => {
+    if (selected === null || savingRef) return;
+    setSavingRef(true);
+    try {
+      await appApi.setReference(selected, reference);
+      setSessions(prev => prev.map(s => (s.id === selected ? { ...s, reference } : s)));
+      toast.success(t('sessions.referenceSaved'));
+    } catch (err) {
+      fail(err);
+    } finally {
+      setSavingRef(false);
     }
   };
 
@@ -685,6 +710,29 @@ export function Sessions() {
             {summary?.stale && <span className="sess-summary-badge">{t('sessions.summaryStaleShort')}</span>}
             {sumGenerating && <span className="sess-summary-badge">{sumStageLabel}</span>}
           </h3>
+
+          <div className="sess-reference">
+            <label className="sess-reference-label" htmlFor="sess-reference-input">
+              {t('sessions.reference')}
+            </label>
+            <p className="sess-hint">{t('sessions.referenceHint')}</p>
+            <textarea
+              id="sess-reference-input"
+              className="sess-reference-input"
+              rows={4}
+              value={reference}
+              placeholder={t('sessions.referencePlaceholder')}
+              onChange={e => setReference(e.target.value)}
+            />
+            <button
+              type="button"
+              className="sess-summary-regen"
+              disabled={savingRef || reference === (current?.reference ?? '')}
+              onClick={saveReference}
+            >
+              {savingRef ? t('sessions.referenceSaving') : t('sessions.referenceSave')}
+            </button>
+          </div>
 
           {sumContent ? (
             <div className="sess-summary-body">

@@ -95,9 +95,14 @@ def sample(lines: list[SummaryLine], budget_chars: int = INPUT_BUDGET) -> tuple[
     return [lines[i] for i in kept], True
 
 
+# Pre-meeting notes past this many characters are truncated before the prompt. They are context,
+# not the subject; a whole slide deck pasted in would crowd out the transcript that is.
+REFERENCE_BUDGET = 2000
+
+
 def build_prompt(lines: list[SummaryLine], lang: str, rules: str,
                  speakers: dict[str, str] | None = None, sampled: bool = False,
-                 total_chars: int | None = None) -> str:
+                 total_chars: int | None = None, reference: str = "") -> str:
     """One language per call — a multi-language reply truncates inside the token budget."""
     # Length target is set by the whole meeting, not by however much survived sampling.
     total = total_chars if total_chars is not None else sum(len(l.text) for l in lines)
@@ -111,6 +116,12 @@ def build_prompt(lines: list[SummaryLine], lang: str, rules: str,
         "",
         f"The summary text should be about {target} characters.",
     ]
+    # Reference before the transcript: the model reads the meeting's own agenda, attendees and terms
+    # first, so a mis-heard product name or an unstated priority is corrected against it. Marked as
+    # background, not content, so nothing here is summarised as if it had been said.
+    if reference := reference.strip():
+        parts += ["", "Background notes provided before the meeting (context only, not spoken):",
+                  reference[:REFERENCE_BUDGET]]
     if sampled:
         parts += ["", "The transcript below is an evenly-sampled excerpt of a longer meeting."]
 
@@ -208,7 +219,8 @@ def max_tokens_for(target: int) -> int:
 
 def summarize(lines: list[SummaryLine], languages: list[str], chat: Callable[[str], str],
               speakers: dict[str, str] | None = None,
-              should_stop: Callable[[], bool] | None = None) -> tuple[dict, str]:
+              should_stop: Callable[[], bool] | None = None,
+              reference: str = "") -> tuple[dict, str]:
     """One summary per language; a language whose reply fails schema twice is simply missing."""
     rules = load_rules()
     total = sum(len(l.text) for l in lines)
@@ -221,7 +233,8 @@ def summarize(lines: list[SummaryLine], languages: list[str], chat: Callable[[st
     for lang in languages:
         if should_stop and should_stop():
             break
-        prompt = build_prompt(sampled_lines, lang, rules, speakers, sampled, total_chars=total)
+        prompt = build_prompt(sampled_lines, lang, rules, speakers, sampled, total_chars=total,
+                              reference=reference)
         raw = chat(prompt)
         try:
             out[lang] = parse_response(raw, valid)

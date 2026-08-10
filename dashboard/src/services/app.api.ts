@@ -79,6 +79,8 @@ export interface SessionSummary {
   refine: { state: RefineState; stage?: RefineStage; error: string };
   /** Whether the recording this session was made from is still on disk. */
   hasRecording: boolean;
+  /** Pre-meeting notes — agenda, attendees, slides — folded into the summary prompt. */
+  reference: string;
 }
 
 /** Where the meeting summary got to. `partial` means some requested languages failed. */
@@ -197,6 +199,12 @@ export const appApi = {
     }),
   forgetCorrection: (wrong: string) =>
     request<LearnedCorrection[]>(`/corrections/${encodeURIComponent(wrong)}`, { method: 'DELETE' }),
+  // Pre-meeting notes for this session, folded into the summary prompt when it regenerates.
+  setReference: (id: number, reference: string) =>
+    request<{ reference: string }>(`/sessions/${id}/reference`, {
+      method: 'PUT',
+      body: JSON.stringify({ reference }),
+    }),
   setLineSource: (id: number, lineId: number, source: string) =>
     request<{ lines: TranscriptLine[]; speakers: Record<string, string> }>(
       `/sessions/${id}/lines/${lineId}`, { method: 'PUT', body: JSON.stringify({ source }) }),

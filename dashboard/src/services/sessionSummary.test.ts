@@ -24,9 +24,17 @@ test('an existing refine field is left alone', () => {
 });
 
 test('the rest of the session is carried through untouched', () => {
-  // Both fields this fills in are stripped; everything else must arrive exactly as it came.
-  const { refine: _refine, hasRecording: _hasRecording, ...rest } = withRefine(raw);
+  // The fields this fills in are stripped; everything else must arrive exactly as it came.
+  const { refine: _refine, hasRecording: _hasRecording, reference: _reference, ...rest } = withRefine(raw);
   assert.deepEqual(rest, raw);
+});
+
+test('a server that does not report a reference defaults it to empty', () => {
+  assert.equal(withRefine(raw).reference, '');
+});
+
+test('an explicit reference is kept', () => {
+  assert.equal(withRefine({ ...raw, reference: 'agenda' }).reference, 'agenda');
 });
 
 test('a server that does not report hasRecording is assumed to have the audio', () => {

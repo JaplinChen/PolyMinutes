@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS session (
     started   TEXT NOT NULL,
     ended     TEXT,
     wav_path  TEXT NOT NULL,
-    lines_rev INTEGER NOT NULL DEFAULT 0
+    lines_rev INTEGER NOT NULL DEFAULT 0,
+    reference TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS line (
     id         INTEGER PRIMARY KEY,
@@ -110,6 +111,9 @@ LINE_COLUMNS = (
 # would miss the most common change of all: an in-place correction, which alters no id and no count.
 SESSION_COLUMNS = (
     ("lines_rev", "ALTER TABLE session ADD COLUMN lines_rev INTEGER NOT NULL DEFAULT 0"),
+    # Pre-meeting notes — agenda, attendees, slides — pasted by the user. Fed to the summary prompt
+    # so it knows the meeting's own terms and priorities; '' for every session recorded before it.
+    ("reference", "ALTER TABLE session ADD COLUMN reference TEXT NOT NULL DEFAULT ''"),
 )
 
 
