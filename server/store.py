@@ -20,26 +20,6 @@ from .speakers import SpeakerStore
 
 DB_PATH = config.ROOT / "polyminutes.db"
 
-
-def _migrate_legacy_db() -> None:
-    """Carry a pre-rename meettranslate.db over to the new name, WAL sidecars included.
-
-    Renaming only the main file would strand an unreplayed WAL and silently lose the tail of
-    the last session, so the three files move together or not at all.
-    """
-    if DB_PATH.exists():
-        return
-    legacy = config.ROOT / "meettranslate.db"
-    if not legacy.exists():
-        return
-    for suffix in ("", "-wal", "-shm"):
-        old = legacy.with_name(legacy.name + suffix)
-        if old.exists():
-            old.rename(DB_PATH.with_name(DB_PATH.name + suffix))
-
-
-_migrate_legacy_db()
-
 # How a glossary term is applied. `keep` exists because code-switched English terms
 # ("schedule", "delay") are shared vocabulary in cross-border teams — translating them into
 # Vietnamese makes the subtitle harder to read, not easier.
