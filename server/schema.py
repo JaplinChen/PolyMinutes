@@ -62,7 +62,8 @@ CREATE TABLE IF NOT EXISTS voiceprint (
 CREATE TABLE IF NOT EXISTS known_speaker (
     name     TEXT PRIMARY KEY,
     centroid BLOB NOT NULL,
-    sessions INTEGER NOT NULL DEFAULT 1
+    sessions INTEGER NOT NULL DEFAULT 1,
+    language TEXT NOT NULL DEFAULT ''
 );
 -- One person sounds different across the room, the mic and their mood, and a single meeting can
 -- split them across several codes. Naming all of them stores every variant here, not just the
@@ -111,6 +112,14 @@ SESSION_COLUMNS = (
 )
 
 
+# The language a known voice speaks, forced on their utterances so a recognised speaker is never
+# mis-detected — the room's Vietnamese speaker stops being decoded as Chinese. '' means auto-detect,
+# which is what every voice learned before this column existed keeps.
+KNOWN_SPEAKER_COLUMNS = (
+    ("language", "ALTER TABLE known_speaker ADD COLUMN language TEXT NOT NULL DEFAULT ''"),
+)
+
+
 def apply(db: sqlite3.Connection) -> None:
     """Create what is missing, then add the columns the schema gained since.
 
@@ -120,7 +129,8 @@ def apply(db: sqlite3.Connection) -> None:
     db.executescript(SCHEMA)
     db.commit()
     added = []
-    for table, columns in (("line", LINE_COLUMNS), ("session", SESSION_COLUMNS)):
+    for table, columns in (("line", LINE_COLUMNS), ("session", SESSION_COLUMNS),
+                           ("known_speaker", KNOWN_SPEAKER_COLUMNS)):
         have = {r["name"] for r in db.execute(f"PRAGMA table_info({table})")}
         added += [ddl for column, ddl in columns if column not in have]
     for ddl in added:

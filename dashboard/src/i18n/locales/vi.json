@@ -278,6 +278,8 @@
     "noCorrections": "Chưa học được sửa lỗi nào. Hãy sửa một dòng trong bản ghi.",
     "forget": "Xoá mục này",
     "rename": "Bấm để đổi tên",
+    "language": "Buộc ngôn ngữ cho giọng này",
+    "langAuto": "Tự nhận",
     "sessions": "{{count}} cuộc họp",
     "edit": "Sửa chỉnh sửa này",
     "editWrong": "Nghe nhầm thành",

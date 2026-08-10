@@ -103,6 +103,16 @@
   font-size: 12px;
 }
 
+.learned-page .learned-lang {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input, var(--bg-card));
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+}
+
 .learned-page .learned-clip {
   margin-left: auto;
   height: 32px;

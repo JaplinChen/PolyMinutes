@@ -116,6 +116,23 @@ class SpeakerStore:
                 "INSERT INTO known_voiceprint (name, centroid) VALUES (?,?)", (name, centroid))
             self._db.commit()
 
+    def set_speaker_language(self, name: str, language: str) -> None:
+        """Force the language a known voice is transcribed in. '' returns them to auto-detect.
+
+        Keyed by name, not by the per-meeting S-code: the code is renumbered every reprocess, so the
+        setting has to live with the identity the room recognises, which is the name.
+        """
+        with self._lock:
+            self._db.execute("UPDATE known_speaker SET language=? WHERE name=?", (language, name))
+            self._db.commit()
+
+    def speaker_languages(self) -> dict[str, str]:
+        """Every known voice's forced language, '' where none is set. Read for the Learned page and,
+        filtered to the non-empty ones, to override a recognised speaker's transcription language."""
+        with self._lock:
+            return {r["name"]: r["language"] for r in self._db.execute(
+                "SELECT name, language FROM known_speaker WHERE name != ''")}
+
     def known_voiceprints(self) -> list[tuple[str, bytes]]:
         """Every stored voiceprint with its current name, for recognising a voice next meeting.
 

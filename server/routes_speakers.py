@@ -8,7 +8,7 @@ from pathlib import Path
 import soundfile as sf
 from fastapi import APIRouter, HTTPException, Response
 
-from . import main
+from . import config, main
 
 router = APIRouter()
 
@@ -47,7 +47,9 @@ def merge_speakers(session_id: int, body: dict) -> dict:
 @router.get("/api/speakers/known")
 def get_known_speakers() -> list[dict]:
     counts = main.store.speaker_sessions()
-    return [{"name": name, "sessions": counts.get(name, 0)} for name, _ in main.store.known_speakers()]
+    langs = main.store.speaker_languages()
+    return [{"name": name, "sessions": counts.get(name, 0), "language": langs.get(name, "")}
+            for name, _ in main.store.known_speakers()]
 
 
 def _clip(sample: tuple[str, float, float | None] | None, seconds: float | None = None) -> Response:
@@ -122,6 +124,18 @@ def rename_known_speaker(name: str, body: dict) -> list[dict]:
         main.store.rename_speaker(name, new)
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
+    return get_known_speakers()
+
+
+@router.put("/api/speakers/known/{name}/language")
+def set_known_speaker_language(name: str, body: dict) -> list[dict]:
+    language = str(body.get("language", "")).strip()
+    # '' is auto-detect; anything else must be a language this room actually runs, or a typo would
+    # force a recognised speaker into a recogniser that was never built for the meeting.
+    allowed = {""} | set(config.load().languages)
+    if language not in allowed:
+        raise HTTPException(400, f"language must be one of {sorted(allowed)}")
+    main.store.set_speaker_language(name, language)
     return get_known_speakers()
 
 
