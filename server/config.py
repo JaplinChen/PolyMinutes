@@ -149,8 +149,17 @@ def load() -> Config:
     return cfg
 
 
-def gpu_model(languages: list[str] | None = None) -> str:
+def gpu_model(languages: list[str] | None = None, live: bool = False) -> str:
     """CTranslate2 model for the GPU path.
+
+    The live path runs large-v3-turbo, the post-meeting path large-v3. Turbo keeps large-v3's
+    encoder and cuts the decoder from 32 layers to 4: measured on pmc.wav here, 116.7s of wall
+    against 44.2s, realtime 0.17 against 0.06, and whole-transcript CER within three points of
+    large-v3 even scored against a reference large-v3 itself produced. What it loses is language
+    identification — the same fifteen minutes came back 79 lines of Chinese from large-v3 and 60
+    Vietnamese / 31 Chinese from turbo. Live can absorb that because the language is forced per
+    speaker (`Diarizer.language_for`) rather than read off the decode; the post-meeting pass has
+    no such anchor on a first run and an hour of decoding is not worth rushing, so it keeps v3.
 
     Breeze ASR 25, a large-v2 fine-tune for Taiwanese Mandarin and Mandarin-English code-switching,
     was tried here and dropped. On a real interview it and large-v3 differed on five lines out of
@@ -162,6 +171,8 @@ def gpu_model(languages: list[str] | None = None) -> str:
     `languages` is accepted because the choice is language-dependent in principle — it just has
     one answer today.
     """
+    if live:
+        return os.environ.get("POLYMINUTES_GPU_MODEL_LIVE", "large-v3-turbo")
     return os.environ.get("POLYMINUTES_GPU_MODEL", "large-v3")
 
 

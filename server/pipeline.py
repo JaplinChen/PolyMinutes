@@ -82,7 +82,7 @@ class Pipeline:
         self._vad = asr.Vad(min_silence=cfg.vad_min_silence)
         # GPU first: measured on this box it is both faster and markedly more accurate.
         self._hotwords = asr_gpu.hotwords_from(store.glossary())
-        self._transcriber = (asr_gpu.maybe(cfg.languages, self._hotwords)
+        self._transcriber = (asr_gpu.maybe(cfg.languages, self._hotwords, live=True)
                              or asr.Transcriber(model_dir=cfg.whisper_dir(),
                                                 languages=cfg.languages))
         self._diarizer = diarize.Diarizer(cfg=cfg, known=diarize.load_known(store),
