@@ -311,6 +311,32 @@ def test_speaker_session_count_is_distinct_meetings_not_saves(client: TestClient
     client.delete(f"/api/speakers/known/{quote(NEW)}")
 
 
+def test_correcting_a_misnamed_speaker_unlearns_the_polluting_print(client: TestClient) -> None:
+    """Changing a code's name from B to A removes from B the variant that caused the mismatch.
+
+    Without this, the wrong print stays under B and misnames the same voice next meeting. Only the
+    close-enough variant goes: B's own genuinely-different print survives the correction.
+    """
+    from urllib.parse import quote
+    A, B = "審查誤認甲", "審查誤認乙"
+    v_wrong = np.array([1.0, 0.0], "float32").tobytes()  # the voice that is actually A's
+    v_b = np.array([0.0, 1.0], "float32").tobytes()      # B's real voice, orthogonal
+    main.store.remember_speaker(B, v_b)
+
+    sid = main.store.start_session("2026-04-01T09:00:00", "u.wav")
+    main.store.save_voiceprint(sid, "S1", v_wrong)
+    client.put(f"/api/sessions/{sid}/speakers", json={"S1": B})   # misnamed — B learns A's voice
+    client.put(f"/api/sessions/{sid}/speakers", json={"S1": A})   # corrected
+
+    prints = main.store.known_voiceprints()
+    assert (A, v_wrong) in prints, prints            # A learned the voice
+    assert (B, v_wrong) not in prints, prints        # the polluting print left B
+    assert (B, v_b) in prints, prints                # B's real print survived
+
+    client.delete(f"/api/speakers/known/{quote(A)}")
+    client.delete(f"/api/speakers/known/{quote(B)}")
+
+
 def test_forgetting_a_speaker_leaves_no_count_behind(client: TestClient) -> None:
     """forget_speaker drops the voice from known_speaker but keeps its historical transcript names.
 

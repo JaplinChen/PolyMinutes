@@ -17,6 +17,8 @@ import threading
 
 import numpy as np
 
+from . import config
+
 # A voice needs a handful of anchors, not a history: past this many prints per name the least
 # informative one is dropped when a new variant arrives.
 KNOWN_PRINT_CAP = 8
@@ -115,6 +117,26 @@ class SpeakerStore:
             self._db.execute(
                 "INSERT INTO known_voiceprint (name, centroid) VALUES (?,?)", (name, centroid))
             self._db.commit()
+
+    def unlearn_speaker(self, name: str, centroid: bytes) -> None:
+        """Drop the stored variant that made this voice answer to `name`.
+
+        Correcting a speaker from B to A carries a second fact besides "this is A": whatever print
+        under B pulled this voice in is wrong, and left in place it will misname the same voice
+        next meeting. Only the closest variant goes, and only if it is close enough to have caused
+        the match — deleting a genuinely-B print because of an unrelated typo fix would erode B.
+        The known_speaker fallback centroid is left alone: for a voice learned before variants
+        existed it is the only print, and removing it would forget the person outright.
+        """
+        with self._lock:
+            vec = np.frombuffer(centroid, dtype=np.float32)
+            rows = list(self._db.execute(
+                "SELECT rowid, centroid FROM known_voiceprint WHERE name=?", (name,)))
+            sims = [(_cosine(vec, np.frombuffer(r["centroid"], dtype=np.float32)), r["rowid"])
+                    for r in rows]
+            if sims and max(sims)[0] >= config.KNOWN_SPEAKER_THRESHOLD:
+                self._db.execute("DELETE FROM known_voiceprint WHERE rowid=?", (max(sims)[1],))
+                self._db.commit()
 
     def set_speaker_language(self, name: str, language: str) -> None:
         """Force the language a known voice is transcribed in. '' returns them to auto-detect.
