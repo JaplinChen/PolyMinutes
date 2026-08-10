@@ -186,17 +186,21 @@ class Store(SpeakerStore):
         return dict(row) if row else None
 
     def replace_line(self, line_id: int, source: str, lang: str, translations: dict[str, str],
-                     status: str) -> None:
-        """Overwrite one line after re-running it. Leaves `refined` alone.
+                     status: str, refined: bool = False) -> None:
+        """Overwrite one line after re-running it. Leaves `refined` alone by default.
 
         `refined` records that the translator revised this line in hindsight, which is a different
         claim from "someone re-ran it", and conflating the two would let a rerun suppress the one
-        refinement pass the line is still entitled to.
+        refinement pass the line is still entitled to. A human edit is the exception: it passes
+        refined=True, because the post-meeting pass rewriting what someone typed by hand is the
+        one thing that flag exists to prevent.
         """
         with self._lock:
             try:
                 self._db.execute("UPDATE line SET source=?, lang=?, status=? WHERE id=?",
                                  (source, lang, status, line_id))
+                if refined:
+                    self._db.execute("UPDATE line SET refined=1 WHERE id=?", (line_id,))
                 self._db.execute("DELETE FROM line_translation WHERE line_id=?", (line_id,))
                 self._db.executemany(
                     "INSERT INTO line_translation (line_id, lang, text) VALUES (?,?,?)",

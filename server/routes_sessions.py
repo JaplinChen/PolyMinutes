@@ -65,7 +65,7 @@ def put_line(session_id: int, line_id: int, body: dict) -> dict:
     # saying one thing in the source and another in every other language.
     translations, status = _translate(source, before["lang"], before["speaker"], line_id)
     main.store.replace_line(line_id, source, before["lang"],
-                            translations or before["translations"], status)
+                            translations or before["translations"], status, refined=True)
     for wrong, right in correct.diff_terms(before["source"], source):
         main.store.add_correction(wrong, right, before["lang"])
     return _transcript(session_id, status)
