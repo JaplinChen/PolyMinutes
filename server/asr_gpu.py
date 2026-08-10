@@ -21,7 +21,7 @@ import numpy as np
 
 from . import asr, config
 
-log = logging.getLogger("meettranslate.asr_gpu")
+log = logging.getLogger("polyminutes.asr_gpu")
 
 # Utterances decoded together. Thirty-two fits in 16 GB beside a large-v3 in float16.
 BATCH_SIZE = 32
@@ -254,10 +254,10 @@ def maybe(languages: list[str], hotwords: str = "") -> Transcriber | None:
     """The GPU recogniser when this machine can run it, otherwise None so the caller falls back.
 
     Auto-enabled rather than configured: it is faster and more accurate on every axis measured, so
-    a knob would only ever be turned one way. `MEETTRANSLATE_NO_GPU=1` exists for the case where
+    a knob would only ever be turned one way. `POLYMINUTES_NO_GPU=1` exists for the case where
     the card is needed for something else.
     """
-    if os.environ.get("MEETTRANSLATE_NO_GPU"):
+    if os.environ.get("POLYMINUTES_NO_GPU"):
         return None
     if not available():
         return None

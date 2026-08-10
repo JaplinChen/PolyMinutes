@@ -2,12 +2,12 @@ import { useEffect } from 'react';
 
 /**
  * Custom hook to set document title dynamically.
- * Automatically appends " | MeetTranslate" suffix.
+ * Automatically appends " | PolyMinutes" suffix.
  */
 export function useDocumentTitle(title: string) {
   useEffect(() => {
     const previousTitle = document.title;
-    document.title = `${title} | MeetTranslate`;
+    document.title = `${title} | PolyMinutes`;
 
     return () => {
       document.title = previousTitle;

@@ -26,7 +26,7 @@ def test_pipeline_emits_line_then_update(tmp: Path) -> None:
 
     # This test is about the sherpa-onnx wiring and a known-language wav; the GPU model would
     # substitute a different recogniser and decode this English clip as Mandarin.
-    os.environ["MEETTRANSLATE_NO_GPU"] = "1"
+    os.environ["POLYMINUTES_NO_GPU"] = "1"
 
     st = store_mod.Store(tmp / "pipeline.db")
     session = st.start_session("now", str(wav))

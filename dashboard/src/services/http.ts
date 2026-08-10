@@ -1,4 +1,4 @@
-// API Service Layer for MeetTranslate Dashboard
+// API Service Layer for PolyMinutes Dashboard
 // Single-user local app: the server listens on localhost only, so there is no auth header.
 
 import { warnIfInsecureHttpUrl } from '../utils/urlSecurity.ts';

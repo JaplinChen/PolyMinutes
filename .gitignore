@@ -10,6 +10,7 @@ dashboard/dist/
 config.json
 llm.json
 llm_keys.json
+polyminutes.db*
 meettranslate.db*
 recordings/
 transcripts/

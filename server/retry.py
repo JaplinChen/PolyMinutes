@@ -16,7 +16,7 @@ from typing import Callable
 
 from . import asr, diarize
 
-log = logging.getLogger("meettranslate.pipeline")
+log = logging.getLogger("polyminutes.pipeline")
 
 # Utterances held back for a second attempt once their speaker's language is known. Each one keeps
 # its raw float32 audio — 20 s of it is about 1.3 MB — so this is a memory budget as much as a

@@ -23,7 +23,7 @@ import soundfile as sf
 
 from . import config
 
-log = logging.getLogger("meettranslate.diarize")
+log = logging.getLogger("polyminutes.diarize")
 
 
 def cosine(a: np.ndarray, b: np.ndarray) -> float:
@@ -355,7 +355,8 @@ class Diarizer:
     """
 
     def __init__(self, model: str | None = None, threshold: float | None = None,
-                 cfg: config.Config | None = None, known: list[tuple[str, np.ndarray]] | None = None):
+                 cfg: config.Config | None = None, known: list[tuple[str, np.ndarray]] | None = None,
+                 known_languages: dict[str, str] | None = None):
         ec = sherpa_onnx.SpeakerEmbeddingExtractorConfig(
             model=str(model or config.SPEAKER_MODEL), num_threads=1
         )
@@ -367,6 +368,9 @@ class Diarizer:
         # Voices this room has met before, as (name, centroid). A new speaker whose embedding
         # matches one is named on the spot instead of arriving as another anonymous Sn.
         self._known = list(known or [])
+        # name -> forced language, for the voices the room has set one on. A recognised speaker is
+        # transcribed in it rather than left to auto-detect, which flips zh to vi on this room's mic.
+        self._known_languages = dict(known_languages or {})
         self.recognised: dict[str, str] = {}
 
     def embed(self, samples: np.ndarray) -> np.ndarray:
@@ -423,6 +427,11 @@ class Diarizer:
         """Language to force on this speaker's next utterance. '' means let Whisper auto-detect."""
         if pinned := self._cfg.pinned_languages.get(speaker.code):
             return pinned
+        # A recognised voice the room set a language on wins over the language auto-detect drifted
+        # into: identity is surer than a per-utterance guess on a noisy room mic.
+        if name := self.recognised.get(speaker.code):
+            if lang := self._known_languages.get(name):
+                return lang
         return speaker.language
 
     def observe_language(self, speaker: Speaker, detected: str) -> None:

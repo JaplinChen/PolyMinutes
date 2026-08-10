@@ -251,6 +251,32 @@ def test_naming_one_person_across_codes_learns_every_voice(client: TestClient) -
     assert sum(n == NAME for n, _ in main.store.known_voiceprints()) == 0
 
 
+def test_a_known_voice_can_be_forced_to_a_language(client: TestClient) -> None:
+    """The room's Vietnamese speaker is set to vi once, by name, and stays vi — auto-detect flips
+    a Chinese-heavy room's voices between zh and vi, so a recognised voice should not be left to it.
+    """
+    session = main.store.start_session("2026-04-04T09:00:00", "lang.wav")
+    NAME = "審查臨時越語"
+    main.store.save_voiceprint(session, "S1", np.array([1.0, 0.0, 0.0, 0.0], "float32").tobytes())
+    client.put(f"/api/sessions/{session}/speakers", json={"S1": NAME})
+
+    # Defaults to auto-detect until set.
+    row = next(s for s in client.get("/api/speakers/known").json() if s["name"] == NAME)
+    assert row["language"] == ""
+
+    updated = client.put(f"/api/speakers/known/{NAME}/language", json={"language": "vi"})
+    assert updated.status_code == 200
+    assert next(s for s in updated.json() if s["name"] == NAME)["language"] == "vi"
+    assert main.store.speaker_languages()[NAME] == "vi"
+
+    # A language the room does not run is refused rather than silently forcing a missing recogniser.
+    assert client.put(f"/api/speakers/known/{NAME}/language", json={"language": "fr"}).status_code == 400
+
+    # '' returns the voice to auto-detect.
+    client.put(f"/api/speakers/known/{NAME}/language", json={"language": ""})
+    assert main.store.speaker_languages()[NAME] == ""
+
+
 def test_speaker_session_count_is_distinct_meetings_not_saves(client: TestClient) -> None:
     """The "N meetings" figure counts meetings the voice was named in, not times it was saved.
 

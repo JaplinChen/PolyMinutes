@@ -20,7 +20,7 @@ from . import asr, asr_gpu, config, correct, diarize, translate
 from .retry import Retries
 from .store import Store
 
-log = logging.getLogger("meettranslate.pipeline")
+log = logging.getLogger("polyminutes.pipeline")
 
 # Blocks the pipeline may fall behind before it starts dropping audio. 600 blocks = 60 s.
 TAP_CAPACITY = 600
@@ -85,7 +85,8 @@ class Pipeline:
         self._transcriber = (asr_gpu.maybe(cfg.languages, self._hotwords)
                              or asr.Transcriber(model_dir=cfg.whisper_dir(),
                                                 languages=cfg.languages))
-        self._diarizer = diarize.Diarizer(cfg=cfg, known=diarize.load_known(store))
+        self._diarizer = diarize.Diarizer(cfg=cfg, known=diarize.load_known(store),
+                                          known_languages=store.speaker_languages())
         self._thread: threading.Thread | None = None
 
         self._context: list[translate.Line] = []

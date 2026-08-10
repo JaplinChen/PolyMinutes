@@ -14,7 +14,7 @@ from fastapi import APIRouter, HTTPException
 
 from . import ask as ask_mod, main
 
-log = logging.getLogger("meettranslate.ask")
+log = logging.getLogger("polyminutes.ask")
 
 router = APIRouter()
 

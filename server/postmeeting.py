@@ -28,7 +28,7 @@ from typing import Callable
 from . import jobs, llm, refine, summarize
 from .store import Store
 
-log = logging.getLogger("meettranslate.postmeeting")
+log = logging.getLogger("polyminutes.postmeeting")
 
 
 def chat_for(llm_cfg: llm.LlmConfig, api_key: str, max_tokens: int,

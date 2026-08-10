@@ -76,7 +76,7 @@ def test_config_defaults_and_env_override() -> None:
             assert cfg.input_device == ""
 
         with patch.object(config, "CONFIG_PATH", missing), \
-             patch.dict(os.environ, {"MEETTRANSLATE_LANGUAGES": "zh, vi", "MEETTRANSLATE_INPUT_DEVICE": "Cable"}):
+             patch.dict(os.environ, {"POLYMINUTES_LANGUAGES": "zh, vi", "POLYMINUTES_INPUT_DEVICE": "Cable"}):
             cfg = config.load()
             assert cfg.languages == ["zh", "vi"]
             assert cfg.input_device == "Cable"

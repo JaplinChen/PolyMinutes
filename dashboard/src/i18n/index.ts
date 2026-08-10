@@ -51,7 +51,7 @@ void i18n
     interpolation: { escapeValue: false },
     detection: {
       order: ['localStorage', 'navigator'],
-      lookupLocalStorage: 'meettranslate_language',
+      lookupLocalStorage: 'polyminutes_language',
       caches: ['localStorage'],
       convertDetectedLanguage: (lang: string) => resolveSupportedLanguage(lang),
     },

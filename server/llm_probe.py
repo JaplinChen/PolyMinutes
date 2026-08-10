@@ -22,7 +22,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-log = logging.getLogger("meettranslate.llm")
+log = logging.getLogger("polyminutes.llm")
 
 # `?key=…` / `&api_key=…` in anything a provider echoed back at us.
 _KEY_IN_URL = re.compile(r"([?&](?:key|api_key)=)[^&\s\"']+")

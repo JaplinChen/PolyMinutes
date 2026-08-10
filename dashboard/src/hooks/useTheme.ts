@@ -3,8 +3,8 @@ import { useState, useEffect, useCallback } from 'react';
 export type Theme = 'light' | 'dark' | 'system' | 'anthropic' | 'anthropic-dark';
 export type ThemePalette = 'green' | 'blue' | 'graphite' | 'indigo' | 'amber' | 'rose' | 'teal';
 
-const THEME_KEY = 'meettranslate_theme';
-const PALETTE_KEY = 'meettranslate_palette';
+const THEME_KEY = 'polyminutes_theme';
+const PALETTE_KEY = 'polyminutes_palette';
 
 // Keys this app was shipped with before it stopped carrying the name of the project it was lifted
 // from. Read once, so an existing tab keeps the theme it was set to instead of snapping back.

@@ -26,7 +26,7 @@ from .hub import Hub
 from .store import Store
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-log = logging.getLogger("meettranslate")
+log = logging.getLogger("polyminutes")
 
 DIST = config.ROOT / "dashboard" / "dist"
 CLIP_SECONDS = 4
@@ -135,7 +135,7 @@ async def lifespan(app: FastAPI):
     store.close()
 
 
-app = FastAPI(title="MeetTranslate", lifespan=lifespan)
+app = FastAPI(title="PolyMinutes", lifespan=lifespan)
 
 # The Vite dev server runs on its own port; the packaged app is same-origin so this is dev-only.
 app.add_middleware(

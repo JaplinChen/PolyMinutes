@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from . import audio, jobs, main
 from .pipeline import Pipeline
 
-log = logging.getLogger("meettranslate")
+log = logging.getLogger("polyminutes")
 
 router = APIRouter()
 
