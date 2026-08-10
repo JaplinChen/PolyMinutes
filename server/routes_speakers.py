@@ -18,12 +18,20 @@ MAX_LINE_SECONDS = 60.0
 
 @router.put("/api/sessions/{session_id}/speakers")
 def put_speaker_names(session_id: int, body: dict) -> dict:
+    previous = main.store.speaker_names(session_id)
     for code, name in body.items():
         code, name = str(code), str(name).strip()
         main.store.set_speaker_name(session_id, code, name)
+        centroid = main.store.voiceprint(session_id, code)
+        if centroid is None:
+            continue
+        # Correcting a wrong name is the correction, not just a new label: the print that pulled
+        # this voice onto the old name is what will misname it again next meeting.
+        if (old := previous.get(code, "")) and old != name:
+            main.store.unlearn_speaker(old, centroid)
         # Naming a speaker is the only labelled data this system ever gets. Attaching it to the
         # voiceprint is what stops the next meeting asking the same question.
-        if name and (centroid := main.store.voiceprint(session_id, code)):
+        if name:
             main.store.remember_speaker(name, centroid)
     return main.store.speaker_names(session_id)
 
