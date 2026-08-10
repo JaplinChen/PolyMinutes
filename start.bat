@@ -42,8 +42,10 @@ if "%REBUILD%"=="yes" (
     echo Dashboard bundle is up to date.
 )
 
+rem Show the LAN URL so it can be shared with others on the same network.
+for /f %%i in ('powershell -NoProfile -Command "(Get-NetIPAddress -AddressFamily IPv4 -PrefixOrigin Dhcp,Manual | Where-Object {$_.IPAddress -notlike '169.254.*'} | Select-Object -First 1).IPAddress"') do echo LAN: http://%%i:%PORT%/
 start "" http://127.0.0.1:%PORT%/
-.venv\Scripts\python.exe -m uvicorn server.main:app --host 127.0.0.1 --port %PORT%
+.venv\Scripts\python.exe -m uvicorn server.main:app --host 0.0.0.0 --port %PORT%
 goto :eof
 
 :fail
