@@ -48,6 +48,12 @@ class Speaker:
     segments: int = 0
     language: str = ""  # established language; '' until the first transcription lands
     counts: dict[str, int] = field(default_factory=dict)
+    # Which capture channel this voice was heard on ("" when capture is single-channel). Clustering
+    # never crosses it: a room-mic voice and a Teams-loopback voice are compared only within their
+    # own channel, because Teams' compression and denoise flatten the loopback voiceprints enough
+    # that a remote speaker and a local one score as the same person — 5 of 7 interviews collapsed
+    # this way. The channel is a certainty the embedding is not, so it partitions the pool outright.
+    source: str = ""
     _pending: tuple[str, int] = ("", 0)
 
 
@@ -364,7 +370,10 @@ class Diarizer:
         self._threshold = config.SPEAKER_THRESHOLD if threshold is None else threshold
         self._cfg = cfg or config.Config()
         self.speakers: list[Speaker] = []
-        self._last_code: str | None = None
+        # Most-recent speaker per channel, for the short-clip inheritance below. Per channel, not
+        # global: a half-second loopback "OK" must inherit the last loopback speaker, never the mic
+        # one that happened to talk most recently.
+        self._last_by_source: dict[str, str] = {}
         # Voices this room has met before, as (name, centroid). A new speaker whose embedding
         # matches one is named on the spot instead of arriving as another anonymous Sn.
         self._known = list(known or [])
@@ -379,25 +388,31 @@ class Diarizer:
         stream.input_finished()
         return np.array(self._extractor.compute(stream), dtype=np.float32)
 
-    def assign(self, samples: np.ndarray) -> Speaker:
-        """Identify the speaker of one utterance, creating a new one if nothing matches."""
+    def assign(self, samples: np.ndarray, source: str = "") -> Speaker:
+        """Identify the speaker of one utterance, creating a new one if nothing matches.
+
+        `source` is the capture channel; clustering stays within it (see `Speaker.source`). Empty
+        for single-channel capture, which restores the original whole-pool behaviour exactly.
+        """
         duration = len(samples) / config.SAMPLE_RATE
 
         # Short clips give unstable embeddings — a hummed "OK" would otherwise mint a new speaker
         # every time. Inheriting the previous speaker is right far more often than guessing.
-        if duration < config.MIN_EMBED_SECONDS and self._last_code:
-            return self._by_code(self._last_code)
+        if duration < config.MIN_EMBED_SECONDS and (last := self._last_by_source.get(source)):
+            return self._by_code(last)
 
         emb = self.embed(samples)
 
         best, best_score = None, -1.0
         for spk in self.speakers:
+            if spk.source != source:
+                continue
             score = cosine(emb, spk.centroid)
             if score > best_score:
                 best, best_score = spk, score
 
         if best is None or best_score < self._threshold:
-            best = Speaker(code=f"S{len(self.speakers) + 1}", centroid=emb)
+            best = Speaker(code=f"S{len(self.speakers) + 1}", centroid=emb, source=source)
             if name := self._recognise(emb):
                 self.recognised[best.code] = name
             self.speakers.append(best)
@@ -407,7 +422,7 @@ class Diarizer:
             best.centroid = (best.centroid * n + emb) / (n + 1)
 
         best.segments += 1
-        self._last_code = best.code
+        self._last_by_source[source] = best.code
         return best
 
     def _recognise(self, emb: np.ndarray) -> str:

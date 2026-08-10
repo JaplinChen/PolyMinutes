@@ -106,6 +106,11 @@ class Config:
     # Substring matched against input device names, case-insensitive. Empty = system default.
     # Set this to the virtual audio device carrying the meeting audio (VB-Cable / BlackHole).
     input_device: str = ""
+    # Optional second capture device, matched the same way. When set, its audio is a separate
+    # channel: room mic on `input_device`, remote participants via Teams loopback here. Speaker
+    # clustering never crosses the two, which stops Teams' compressed voiceprints from collapsing
+    # into the room's. Empty = single-channel capture, unchanged from before.
+    loopback_device: str = ""
     whisper_model: str = "small"
     # Consecutive detections disagreeing with a speaker's established language before switching.
     # Higher for zh<->en because Taiwanese Mandarin routinely embeds English words and would

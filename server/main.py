@@ -31,8 +31,8 @@ log = logging.getLogger("polyminutes")
 DIST = config.ROOT / "dashboard" / "dist"
 CLIP_SECONDS = 4
 
-state: dict = {"recorder": None, "pipeline": None, "session": None, "gpu": False,
-               "cfg": config.load(), "llm": llm.load_llm()}
+state: dict = {"recorder": None, "loopback": None, "pipeline": None, "session": None,
+               "gpu": False, "cfg": config.load(), "llm": llm.load_llm()}
 store = Store()
 keys = llm.KeyStore()
 hub = Hub()
@@ -102,14 +102,18 @@ def _refine(session_id: int, wav: Path) -> None:
 
 
 def _stop_capture(refine: bool = True) -> dict:
-    rec, pipe = state["recorder"], state["pipeline"]
+    rec, loop, pipe = state["recorder"], state["loopback"], state["pipeline"]
     session_id, holds_gpu = state["session"], state["gpu"]
     path = rec.stop() if rec else None
+    # The loopback channel, if any, is stopped too — its (source, None) sentinel is what lets the
+    # pipeline's per-channel end count complete, so pipe.join() below would otherwise hang.
+    if loop:
+        loop.stop()
     if pipe:
         pipe.join()
     if session_id is not None:
         store.end_session(session_id, time.strftime("%Y-%m-%dT%H:%M:%S"))
-    state.update(recorder=None, pipeline=None, session=None, gpu=False)
+    state.update(recorder=None, loopback=None, pipeline=None, session=None, gpu=False)
     # Released before scheduling, or the pass would wait on a gate this thread still holds.
     if holds_gpu:
         jobs.release_gpu()
