@@ -326,6 +326,41 @@ def test_editing_a_line_teaches_the_correction(client: TestClient) -> None:
     assert client.delete("/api/corrections/申管").json() == []
 
 
+def test_an_edited_line_is_retranslated_and_kept_from_the_refiner(client: TestClient) -> None:
+    """The translations came from the wrong words, so an edit has to redo them.
+
+    And having redone them by hand, the line is marked refined: the post-meeting pass rewriting
+    what someone typed in the room is the one thing that flag exists to prevent.
+    """
+    session = main.store.start_session("now", "x.wav")
+    line = main.store.add_line(session, 1.0, "S1", "zh", "申管會", {"en": "stale", "vi": "cũ"})
+
+    made = []
+
+    class Echo:
+        def translate(self, ln, targets, context=None, previous=None, terms=None, prev_targets=None):
+            made.append(ln.text)
+            return translate.Result({t: f"[{t}] {ln.text}" for t in targets})
+
+    real = main._make_translator
+    main._make_translator = lambda: Echo()
+    try:
+        r = client.put(f"/api/sessions/{session}/lines/{line}", json={"source": "生管會"})
+        assert r.status_code == 200, r.text
+        assert made == ["生管會"]
+        edited = next(l for l in r.json()["lines"] if l["id"] == line)
+        assert edited["translations"]["en"] == "[en] 生管會"
+        assert main.store.line(line)["refined"] == 1
+
+        # Same text, translated again: for a line whose words are right and whose rendering is not.
+        r = client.post(f"/api/sessions/{session}/lines/{line}/retranslate")
+        assert r.status_code == 200, r.text
+        assert made == ["生管會", "生管會"]
+        assert client.post(f"/api/sessions/{session}/lines/9999/retranslate").status_code == 404
+    finally:
+        main._make_translator = real
+
+
 def test_every_script_flag_is_wired_to_something(tmp: Path) -> None:
     """A flag that nothing reads is a feature that silently stopped existing.
 

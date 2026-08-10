@@ -364,6 +364,24 @@ export function Sessions() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected, t, toast]);
 
+  // Same gate as a rerun, but no audio and no GPU: this is for a line whose words are right and
+  // whose translation is not — a hand-corrected line, or one the model rendered badly.
+  const retranslateLine = useCallback(async (lineId: number) => {
+    if (selected === null) return;
+    setRerunning(lineId);
+    try {
+      const r = await appApi.retranslateLine(selected, lineId);
+      setLines(r.lines);
+      setNames(r.speakers);
+      if (r.status !== 'ok') toast.error(t('sessions.lineFailedTranslate'));
+    } catch (err) {
+      fail(err);
+    } finally {
+      setRerunning(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, t, toast]);
+
   // 943 lines is not a list you scroll to check a word in. Matches the text as spoken, every
   // translation of it, and the speaker — searching for a name is how you find what someone said
   // once the voices have been named.
@@ -647,6 +665,7 @@ export function Sessions() {
                 onDraft={setEditing}
                 onSave={saveLine}
                 onRerun={rerunLine}
+                onRetranslate={retranslateLine}
                 onPlay={playLine}
                 onReassign={reassignLine}
               />

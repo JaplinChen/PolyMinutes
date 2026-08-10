@@ -15,7 +15,7 @@ from fastapi.responses import PlainTextResponse
 
 from . import asr, asr_gpu, config, correct, ingest, jobs, main, translate
 
-log = logging.getLogger("meettranslate")
+log = logging.getLogger("polyminutes")
 
 router = APIRouter()
 
@@ -61,10 +61,14 @@ def put_line(session_id: int, line_id: int, body: dict) -> dict:
     if before is None:
         raise HTTPException(404, "no such line in this session")
 
-    main.store.update_line(line_id, source, before["translations"])
+    # The old translations were made from the wrong words, so keeping them would leave the meeting
+    # saying one thing in the source and another in every other language.
+    translations, status = _translate(source, before["lang"], before["speaker"], line_id)
+    main.store.replace_line(line_id, source, before["lang"],
+                            translations or before["translations"], status, refined=True)
     for wrong, right in correct.diff_terms(before["source"], source):
         main.store.add_correction(wrong, right, before["lang"])
-    return {"lines": main.store.lines(session_id), "speakers": main.store.speaker_names(session_id)}
+    return _transcript(session_id, status)
 
 
 @router.put("/api/sessions/{session_id}/lines/{line_id}/speaker")
@@ -205,6 +209,21 @@ def summarize_session(session_id: int) -> dict:
     return _summary_body(session_id)
 
 
+def _translate(text: str, lang: str, speaker: str, line_id: int) -> tuple[dict[str, str], str]:
+    """Translate one line into every other configured language. Never raises."""
+    translator = main._make_translator()
+    targets = [c for c in main.state["cfg"].languages if c != lang]
+    if not translator or not targets:
+        return {}, "ok"
+    try:
+        return translator.translate(
+            translate.Line(text=text, lang=lang, speaker=speaker),
+            targets, terms=main.store.glossary()).translations, "ok"
+    except Exception:
+        log.exception("translation failed for line %d", line_id)
+        return {}, "translate_failed"
+
+
 def _transcript(session_id: int, status: str) -> dict:
     """The shape every transcript-mutating endpoint returns.
 
@@ -214,6 +233,18 @@ def _transcript(session_id: int, status: str) -> dict:
     """
     return {"lines": main.store.lines(session_id), "speakers": main.store.speaker_names(session_id),
             "status": status}
+
+
+@router.post("/api/sessions/{session_id}/lines/{line_id}/retranslate")
+def retranslate_line(session_id: int, line_id: int) -> dict:
+    """Translate one line again from the text already on screen. No audio, no GPU."""
+    line = main.store.line(line_id)
+    if not line or line["session_id"] != session_id:
+        raise HTTPException(404, "no such line")
+
+    translations, status = _translate(line["source"], line["lang"], line["speaker"], line_id)
+    main.store.replace_line(line_id, line["source"], line["lang"], translations, status)
+    return _transcript(session_id, status)
 
 
 @router.post("/api/sessions/{session_id}/lines/{line_id}/rerun")
@@ -266,18 +297,7 @@ def rerun_line(session_id: int, line_id: int) -> dict:
         return _transcript(session_id, "asr_failed")
 
     text = correct.Corrector(main.store.glossary(), main.store.corrections()).fix(text)
-    translator = main._make_translator()
-    targets = [c for c in main.state["cfg"].languages if c != (used or line["lang"])]
-    translations, status = {}, "ok"
-    if translator and targets:
-        try:
-            translations = translator.translate(
-                translate.Line(text=text, lang=used or line["lang"], speaker=line["speaker"]),
-                targets, terms=main.store.glossary()).translations
-        except Exception:
-            log.exception("rerun translation failed for line %d", line_id)
-            status = "translate_failed"
-
+    translations, status = _translate(text, used or line["lang"], line["speaker"], line_id)
     main.store.replace_line(line_id, text, used or line["lang"], translations, status)
     return _transcript(session_id, status)
 
