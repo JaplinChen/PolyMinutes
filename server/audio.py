@@ -30,9 +30,9 @@ class DeviceNotFound(Exception):
 SENTINEL_TIMEOUT = 5.0
 
 
-def _signal_end(q: "queue.Queue") -> None:
+def _signal_end(q: "queue.Queue", sentinel=None) -> None:
     try:
-        q.put(None, timeout=SENTINEL_TIMEOUT)
+        q.put(sentinel, timeout=SENTINEL_TIMEOUT)
     except queue.Full:
         pass
 
@@ -126,10 +126,14 @@ class Recorder:
     """
 
     def __init__(self, device: "int | None | list[int | None]" = None,
-                 tap: "queue.Queue[np.ndarray | None] | None" = None):
+                 tap: "queue.Queue | None" = None, source: str = ""):
         # Accepts a list of candidates so start() can fall through to the next host API.
         self._candidates: list[int | None] = device if isinstance(device, list) else [device]
         self.device: int | None = self._candidates[0]
+        # Channel label carried to the pipeline so it can keep this device's speakers apart from the
+        # other channel's. "" for single-channel capture. Two recorders share one tap; each tags its
+        # own blocks, so the single consumer can tell them apart.
+        self._source = source
         self._queue: queue.Queue[np.ndarray | None] = queue.Queue(maxsize=256)
         # Optional second consumer (the transcription pipeline). It is deliberately separate from
         # the writer queue: if the pipeline stalls, blocks are dropped from the tap only and the
@@ -160,7 +164,7 @@ class Recorder:
             self._dropped += 1
         if self._tap is not None:
             try:
-                self._tap.put_nowait(block)
+                self._tap.put_nowait((self._source, block))
             except queue.Full:
                 self.tap_dropped += 1
 
@@ -252,7 +256,7 @@ class Recorder:
             self._writer.join(timeout=10)
             self._writer = None
         if self._tap is not None:
-            _signal_end(self._tap)
+            _signal_end(self._tap, (self._source, None))
 
         return self._path
 

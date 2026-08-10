@@ -22,8 +22,10 @@ def start_recording() -> dict:
         raise HTTPException(409, "already recording")
 
     cfg = main.state["cfg"]
+    loopback_name = cfg.loopback_device.strip()
     try:
         candidates = audio.candidate_devices(cfg.input_device)
+        loop_candidates = audio.candidate_devices(loopback_name) if loopback_name else None
     except audio.DeviceNotFound as exc:
         raise HTTPException(400, str(exc)) from exc
 
@@ -44,13 +46,23 @@ def start_recording() -> dict:
             # off disk. Missing weights raised out of here as an unhandled error, so the page showed
             # "HTTP 500" — while the exception itself named the exact file. That message is the
             # whole answer on a machine where the models were never downloaded.
-            pipe = Pipeline(cfg, main.store, session_id, main._make_translator(), main.hub.publish)
+            channels = 2 if loop_candidates else 1
+            pipe = Pipeline(cfg, main.store, session_id, main._make_translator(),
+                            main.hub.publish, channels=channels)
         except FileNotFoundError as exc:
             raise HTTPException(503, f"speech model not ready: {exc}") from exc
-        rec = audio.Recorder(candidates, tap=pipe.tap)
+        # Two channels: room mic on the primary device, remote participants via loopback. Each
+        # writes its own wav and tags its blocks so the pipeline keeps their speakers apart.
+        source = "mic" if loop_candidates else ""
+        rec = audio.Recorder(candidates, tap=pipe.tap, source=source)
+        loop_rec = (audio.Recorder(loop_candidates, tap=pipe.tap, source="loopback")
+                    if loop_candidates else None)
         try:
             rec.start(path)
+            if loop_rec:
+                loop_rec.start(path.with_suffix(".loopback.wav"))
         except RuntimeError as exc:
+            rec.stop()
             raise HTTPException(400, str(exc)) from exc
         pipe.start()
     except BaseException:
@@ -61,7 +73,7 @@ def start_recording() -> dict:
         raise
 
     log.info("capturing from device %s at %s", rec.device, rec.native_format)
-    main.state.update(recorder=rec, pipeline=pipe, session=session_id)
+    main.state.update(recorder=rec, loopback=loop_rec, pipeline=pipe, session=session_id)
     return recording_status()
 
 

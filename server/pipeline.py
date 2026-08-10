@@ -63,7 +63,7 @@ class Pipeline:
 
     def __init__(self, cfg: config.Config, store: Store, session_id: int,
                  translator: translate.Translator | None,
-                 emit: Callable[[dict], None]):
+                 emit: Callable[[dict], None], channels: int = 1):
         self._cfg = cfg
         self._store = store
         self._session = session_id
@@ -78,8 +78,14 @@ class Pipeline:
         if missing:
             raise FileNotFoundError("speech models not found: " + ", ".join(missing))
 
-        self.tap: queue.Queue[np.ndarray | None] = queue.Queue(maxsize=TAP_CAPACITY)
-        self._vad = asr.Vad(min_silence=cfg.vad_min_silence)
+        # Items are (source, block); a bare ndarray is accepted as source "" so the single-channel
+        # feed (and every test that pushes plain blocks) is unchanged. (source, None) ends one
+        # channel, a bare None ends the only channel.
+        self.tap: queue.Queue = queue.Queue(maxsize=TAP_CAPACITY)
+        self._channels = max(1, channels)
+        # One VAD per channel: interleaving room mic and Teams loopback through a single VAD would
+        # splice a local and a remote turn into one utterance. Created on first block from a source.
+        self._vad: dict[str, asr.Vad] = {}
         # GPU first: measured on this box it is both faster and markedly more accurate.
         self._hotwords = asr_gpu.hotwords_from(store.glossary())
         self._transcriber = (asr_gpu.maybe(cfg.languages, self._hotwords, live=True)
@@ -108,23 +114,41 @@ class Pipeline:
             self._thread.join(timeout=timeout)
             self._thread = None
 
+    def _vad_for(self, source: str) -> asr.Vad:
+        vad = self._vad.get(source)
+        if vad is None:
+            vad = self._vad[source] = asr.Vad(min_silence=self._cfg.vad_min_silence)
+        return vad
+
     def _run(self) -> None:
         try:
-            while (block := self.tap.get()) is not None:
+            ended = 0
+            while (item := self.tap.get()) is not None:
+                source, block = item if isinstance(item, tuple) else ("", item)
+                if block is None:  # this channel is done
+                    ended += 1
+                    for segment in self._vad_for(source).flush():
+                        self._handle(segment, source)
+                    if ended >= self._channels:
+                        break
+                    continue
                 self.backlog_peak = max(self.backlog_peak, self.tap.qsize())
                 if self.tap.qsize() == BACKLOG_WARN:
                     log.warning("pipeline backlog %d blocks — realtime factor above 1", self.tap.qsize())
-                for segment in self._vad.push(block):
-                    self._handle(segment)
-            for segment in self._vad.flush():
-                self._handle(segment)
+                for segment in self._vad_for(source).push(block):
+                    self._handle(segment, source)
+            else:
+                # A bare None ends the single-channel feed; flush every VAD that saw audio.
+                for source, vad in self._vad.items():
+                    for segment in vad.flush():
+                        self._handle(segment, source)
             self._retries.drain(self._diarizer.language_for, self._recover)
         except Exception:  # a crashed pipeline must not take the recording with it
             log.exception("pipeline stopped")
 
-    def _handle(self, segment: asr.Segment) -> None:
+    def _handle(self, segment: asr.Segment, source: str = "") -> None:
         try:
-            speaker = self._diarizer.assign(segment.samples)
+            speaker = self._diarizer.assign(segment.samples, source)
             # A voice the room already knows arrives named. The centroid is stored either way, so
             # naming an unknown speaker afterwards is enough to recognise them next time.
             self._store.save_voiceprint(self._session, speaker.code, speaker.centroid.tobytes())

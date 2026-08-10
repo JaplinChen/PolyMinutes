@@ -176,7 +176,7 @@ class OneSpeaker:
         self.votes: list[str] = []
         self._speaker = self._S()
 
-    def assign(self, samples):
+    def assign(self, samples, source=""):
         return self._speaker
 
     def language_for(self, speaker):

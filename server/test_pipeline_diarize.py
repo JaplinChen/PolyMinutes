@@ -11,7 +11,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import config, diarize, postprocess
+from . import config, diarize, pipeline as pipeline_mod, postprocess
 
 
 def test_a_speaker_needs_evidence_before_setting_their_own_language() -> None:
@@ -93,7 +93,7 @@ def _diarizer(cfg: config.Config) -> diarize.Diarizer:
     d = diarize.Diarizer.__new__(diarize.Diarizer)
     d._cfg = cfg
     d.speakers = []
-    d._last_code = None
+    d._last_by_source = {}
     d.recognised = {}
     d._known_languages = {}
     return d
@@ -119,6 +119,77 @@ def test_disagreeing_openers_do_not_lock_a_new_speaker() -> None:
     assert spk.language == ""
     d.observe_language(spk, "zh")
     assert spk.language == "zh"
+
+
+def test_clustering_never_crosses_the_capture_channel() -> None:
+    """Same voiceprint on two channels stays two speakers; Teams loopback must not merge into mic."""
+    d = _diarizer(config.Config())
+    d._threshold = 0.5
+    d._known = []
+    d.embed = lambda samples: np.ones(4, dtype=np.float32)  # identical embedding every call
+
+    mic = d.assign(np.zeros(config.SAMPLE_RATE, dtype=np.float32), source="mic")
+    loop = d.assign(np.zeros(config.SAMPLE_RATE, dtype=np.float32), source="loopback")
+    assert mic.code != loop.code, "identical embeddings on different channels collapsed"
+    assert (mic.source, loop.source) == ("mic", "loopback")
+
+    # A second mic utterance rejoins the mic speaker, not the loopback one.
+    again = d.assign(np.zeros(config.SAMPLE_RATE, dtype=np.float32), source="mic")
+    assert again.code == mic.code
+    assert len(d.speakers) == 2
+
+
+def test_pipeline_drains_two_channels_and_tags_each_segment() -> None:
+    """Two channels share one tap; the consumer must route each block to its own VAD, tag the
+    segment with its source, and only stop once both channels have sent their end sentinel."""
+    import queue
+
+    class FakeVad:
+        def __init__(self, source): self.source = source
+        def push(self, block): return [f"{self.source}-seg"]
+        def flush(self): return []
+
+    p = pipeline_mod.Pipeline.__new__(pipeline_mod.Pipeline)
+    p.tap = queue.Queue()
+    p._channels = 2
+    p._vad = {"mic": FakeVad("mic"), "loopback": FakeVad("loopback")}
+    p.backlog_peak = 0
+    p._retries = type("R", (), {"drain": lambda *a: None})()
+    p._diarizer = type("D", (), {"language_for": lambda *a: ""})()
+    handled: list[tuple[object, str]] = []
+    p._handle = lambda seg, source="": handled.append((seg, source))
+
+    p.tap.put(("mic", np.zeros(4, dtype=np.float32)))
+    p.tap.put(("loopback", np.zeros(4, dtype=np.float32)))
+    p.tap.put(("mic", None))
+    p.tap.put(("loopback", None))
+    p._run()
+
+    assert ("mic-seg", "mic") in handled and ("loopback-seg", "loopback") in handled, handled
+
+
+def test_pipeline_stops_only_after_every_channel_ends() -> None:
+    """One channel's end sentinel must not stop a two-channel pipeline while the other still feeds."""
+    import queue, threading
+
+    silent = type("V", (), {"push": lambda s, b: [], "flush": lambda s: []})
+    p = pipeline_mod.Pipeline.__new__(pipeline_mod.Pipeline)
+    p.tap = queue.Queue()
+    p._channels = 2
+    # Pre-seeded so _vad_for never builds a real Vad — CI has no silero model on disk.
+    p._vad = {"mic": silent(), "loopback": silent()}
+    p.backlog_peak = 0
+    p._retries = type("R", (), {"drain": lambda *a: None})()
+    p._diarizer = type("D", (), {"language_for": lambda *a: ""})()
+    p._handle = lambda seg, source="": None
+
+    done = threading.Event()
+    t = threading.Thread(target=lambda: (p._run(), done.set()), daemon=True)
+    t.start()
+    p.tap.put(("mic", None))
+    assert not done.wait(0.3), "stopped after one of two channels ended"
+    p.tap.put(("loopback", None))
+    assert done.wait(1.0), "did not stop after both channels ended"
 
 
 def test_single_disagreement_does_not_switch() -> None:
