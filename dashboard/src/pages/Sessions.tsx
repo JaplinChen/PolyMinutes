@@ -589,8 +589,9 @@ export function Sessions() {
                 <label className="sess-name-field">
                   <span>{code}</span>
                   <input
-                    defaultValue={names[code] ?? ''}
+                    value={names[code] ?? ''}
                     placeholder={t('sessions.namePlaceholder')}
+                    onChange={e => setNames(prev => ({ ...prev, [code]: e.target.value }))}
                     onBlur={e => saveName(code, e.target.value)}
                   />
                 </label>
