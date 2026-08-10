@@ -172,11 +172,12 @@ def test_pipeline_stops_only_after_every_channel_ends() -> None:
     """One channel's end sentinel must not stop a two-channel pipeline while the other still feeds."""
     import queue, threading
 
+    silent = type("V", (), {"push": lambda s, b: [], "flush": lambda s: []})
     p = pipeline_mod.Pipeline.__new__(pipeline_mod.Pipeline)
     p.tap = queue.Queue()
     p._channels = 2
-    p._vad = {}
-    p._cfg = config.Config()
+    # Pre-seeded so _vad_for never builds a real Vad — CI has no silero model on disk.
+    p._vad = {"mic": silent(), "loopback": silent()}
     p.backlog_peak = 0
     p._retries = type("R", (), {"drain": lambda *a: None})()
     p._diarizer = type("D", (), {"language_for": lambda *a: ""})()
