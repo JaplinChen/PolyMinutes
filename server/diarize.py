@@ -454,9 +454,10 @@ class Diarizer:
             # rest of the meeting — and the live recogniser is turbo, whose language identification
             # is the one thing it is measurably worse at.
             first, _ = speaker._pending
-            speaker._pending = ("", 0) if first == detected else (detected, 1)
             if first == detected:
-                speaker.language = detected
+                speaker.language, speaker._pending = detected, ("", 0)
+            else:
+                speaker._pending = (detected, 1)
             return
 
         if detected == speaker.language:
