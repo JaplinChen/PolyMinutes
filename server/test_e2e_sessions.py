@@ -175,6 +175,44 @@ def test_importing_a_recording_makes_it_a_session(client: TestClient) -> None:
     assert len({s["wav_path"] for s in imports}) == 2, imports
 
 
+def test_recordings_survive_a_renamed_project_directory(tmp: Path) -> None:
+    """Stored paths must not pin a recording to the folder name the project had that day.
+
+    Renaming the project once stranded every session: wav_path held an absolute path into the old
+    directory, and nothing reads a session without reading its audio. Not reachable through the
+    API — `isolate` puts recordings outside the repo root, which is exactly the case that stays
+    absolute — so the three pieces are checked where they live.
+    """
+    import sqlite3
+
+    from . import schema, store as store_mod
+
+    under_root = config.ROOT / "recordings" / "meeting.wav"
+    assert store_mod._portable(str(under_root)) == "recordings/meeting.wav"
+    # Nothing to be relative to: kept as given rather than mangled into a wrong path.
+    outside = tmp.resolve() / "elsewhere.wav"
+    assert store_mod._portable(str(outside)) == str(outside)
+
+    assert config.recording_path("recordings/meeting.wav") == under_root
+    assert config.recording_path(str(outside)) == outside
+
+    db = sqlite3.connect(":memory:")
+    db.row_factory = sqlite3.Row
+    db.execute("CREATE TABLE session (id INTEGER PRIMARY KEY, wav_path TEXT NOT NULL)")
+    # Absolute, and built from a real path so this reads the same on the mac side of the project.
+    stale = tmp.resolve() / "OldProjectName" / "recordings" / "old.wav"
+    rows = [(1, str(stale)),
+            (2, "recordings/already-relative.wav"),
+            (3, str(outside))]
+    db.executemany("INSERT INTO session (id, wav_path) VALUES (?,?)", rows)
+    schema._relativise_recordings(db)
+    after = {r["id"]: r["wav_path"] for r in db.execute("SELECT id, wav_path FROM session")}
+    db.close()
+    assert after[1] == "recordings/old.wav", after
+    # Untouched: one is already relative, and the other was deliberately stored outside the project.
+    assert after[2] == "recordings/already-relative.wav" and after[3] == str(outside), after
+
+
 def test_import_decodes_off_the_event_loop(client: TestClient) -> None:
     """ffmpeg and the ASR decode are blocking; on the event loop they freeze every other request —
     a live meeting's subtitle socket included — for the length of the import. They must run in a

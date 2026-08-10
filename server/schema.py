@@ -7,6 +7,7 @@ with no query logic and nothing to decide at runtime.
 from __future__ import annotations
 
 import sqlite3
+from pathlib import PurePath
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS glossary (
@@ -120,6 +121,25 @@ KNOWN_SPEAKER_COLUMNS = (
 )
 
 
+def _relativise_recordings(db: sqlite3.Connection) -> None:
+    """Rewrite absolute session.wav_path rows as paths relative to the repo root.
+
+    Renaming the project directory left every stored recording pointing at a folder that no longer
+    exists, and nothing reads a session without reading its audio. Only paths that carry a
+    `recordings` component are touched — anything else was put there deliberately and is left alone.
+    """
+    updates = []
+    for row in db.execute("SELECT id, wav_path FROM session"):
+        parts = PurePath(row["wav_path"]).parts
+        if not PurePath(row["wav_path"]).is_absolute() or "recordings" not in parts:
+            continue
+        tail = parts[parts.index("recordings"):]
+        updates.append(("/".join(tail), row["id"]))
+    if updates:
+        db.executemany("UPDATE session SET wav_path=? WHERE id=?", updates)
+        db.commit()
+
+
 def apply(db: sqlite3.Connection) -> None:
     """Create what is missing, then add the columns the schema gained since.
 
@@ -137,3 +157,4 @@ def apply(db: sqlite3.Connection) -> None:
         db.execute(ddl)
     if added:
         db.commit()
+    _relativise_recordings(db)
