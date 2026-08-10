@@ -105,13 +105,13 @@ class Transcriber:
 
     def __init__(self, model: str | Path | None = None, device: str = "cuda",
                  compute_type: str = "float16", languages: list[str] | None = None,
-                 hotwords: str = ""):
+                 hotwords: str = "", live: bool = False):
         _add_cuda_dlls()
         from faster_whisper import WhisperModel
 
         self._languages = list(languages or [])
         self._hotwords = hotwords
-        name = str(model or config.gpu_model(self._languages))
+        name = str(model or config.gpu_model(self._languages, live=live))
         index = config.gpu_index() if device == "cuda" else 0
         self._model = WhisperModel(name, device=device, device_index=index,
                                    compute_type=compute_type)
@@ -250,7 +250,7 @@ class Transcriber:
         return any(base == code.split("-")[0] for code in self._languages)
 
 
-def maybe(languages: list[str], hotwords: str = "") -> Transcriber | None:
+def maybe(languages: list[str], hotwords: str = "", live: bool = False) -> Transcriber | None:
     """The GPU recogniser when this machine can run it, otherwise None so the caller falls back.
 
     Auto-enabled rather than configured: it is faster and more accurate on every axis measured, so
@@ -262,7 +262,7 @@ def maybe(languages: list[str], hotwords: str = "") -> Transcriber | None:
     if not available():
         return None
     try:
-        return Transcriber(languages=languages, hotwords=hotwords)
+        return Transcriber(languages=languages, hotwords=hotwords, live=live)
     except Exception:
         log.exception("GPU transcriber unavailable, falling back to CPU")
         return None

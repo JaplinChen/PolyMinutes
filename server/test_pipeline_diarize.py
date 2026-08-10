@@ -99,10 +99,26 @@ def _diarizer(cfg: config.Config) -> diarize.Diarizer:
     return d
 
 
-def test_first_language_is_adopted_immediately() -> None:
-    d, spk = _diarizer(config.Config()), diarize.Speaker(code="S1", centroid=np.zeros(4, dtype=np.float32))
+def _new_speaker() -> diarize.Speaker:
+    return diarize.Speaker(code="S1", centroid=np.zeros(4, dtype=np.float32))
+
+
+def test_first_language_needs_two_agreeing_detections() -> None:
+    """One detection must not lock a new speaker: the lock is one-way once language_for forces it."""
+    d, spk = _diarizer(config.Config()), _new_speaker()
+    d.observe_language(spk, "vi")
+    assert spk.language == "", "locked on a single detection"
     d.observe_language(spk, "vi")
     assert spk.language == "vi"
+
+
+def test_disagreeing_openers_do_not_lock_a_new_speaker() -> None:
+    d, spk = _diarizer(config.Config()), _new_speaker()
+    for lang in ("vi", "zh", "vi", "zh"):
+        d.observe_language(spk, lang)
+    assert spk.language == ""
+    d.observe_language(spk, "zh")
+    assert spk.language == "zh"
 
 
 def test_single_disagreement_does_not_switch() -> None:

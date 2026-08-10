@@ -447,7 +447,17 @@ class Diarizer:
         speaker.counts[detected] = speaker.counts.get(detected, 0) + 1
 
         if not speaker.language:
-            speaker.language = detected
+            # Two agreeing detections before a new speaker is locked in. The lock is one-way in
+            # practice: `language_for` then forces this language on every later utterance, so the
+            # decode can only ever come back agreeing with it and no disagreement arrives to switch
+            # it. A single mis-identification on someone's opening sentence would own them for the
+            # rest of the meeting — and the live recogniser is turbo, whose language identification
+            # is the one thing it is measurably worse at.
+            first, _ = speaker._pending
+            if first == detected:
+                speaker.language, speaker._pending = detected, ("", 0)
+            else:
+                speaker._pending = (detected, 1)
             return
 
         if detected == speaker.language:
