@@ -276,6 +276,9 @@ def test_a_known_voice_can_be_forced_to_a_language(client: TestClient) -> None:
     client.put(f"/api/speakers/known/{NAME}/language", json={"language": ""})
     assert main.store.speaker_languages()[NAME] == ""
 
+    # Leave the shared store as it was found — a later test asserts the exact known-voice list.
+    client.delete(f"/api/speakers/known/{NAME}")
+
 
 def test_speaker_session_count_is_distinct_meetings_not_saves(client: TestClient) -> None:
     """The "N meetings" figure counts meetings the voice was named in, not times it was saved.
