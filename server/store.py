@@ -51,6 +51,18 @@ _migrate_legacy_db()
 TERM_MODES = ("translate", "keep", "hint", "protect")
 
 
+def _portable(wav_path: str) -> str:
+    """Store a recording relative to the repo root when it lives under it.
+
+    Read back through `config.recording_path`. A path outside the root has nothing to be relative
+    to, so it is stored as given.
+    """
+    try:
+        return Path(wav_path).resolve().relative_to(config.ROOT).as_posix()
+    except ValueError:
+        return wav_path
+
+
 @dataclass
 class Term:
     id: int
@@ -118,7 +130,8 @@ class Store(SpeakerStore):
 
     def start_session(self, started: str, wav_path: str) -> int:
         with self._lock:
-            cur = self._db.execute("INSERT INTO session (started, wav_path) VALUES (?,?)", (started, wav_path))
+            cur = self._db.execute("INSERT INTO session (started, wav_path) VALUES (?,?)",
+                                   (started, _portable(wav_path)))
             self._db.commit()
             return int(cur.lastrowid)
 

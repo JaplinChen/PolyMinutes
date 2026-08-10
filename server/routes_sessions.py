@@ -35,7 +35,7 @@ def get_sessions() -> list[dict]:
     # Whether the recording is still on disk. Everything that reads audio — playing a line, hearing
     # a speaker, re-deriving the transcript — fails without it, and the page could only find out by
     # trying: 943 play buttons that each produce the same error is not a way to learn that.
-    return [{**s, "hasRecording": Path(s["wav_path"]).is_file(),
+    return [{**s, "hasRecording": config.recording_path(s["wav_path"]).is_file(),
              "refine": running.get(s["id"], {"state": "idle", "error": ""})}
             for s in main.store.sessions()]
 
@@ -128,7 +128,7 @@ def reprocess(session_id: int) -> dict:
     if main.state["session"] == session_id:
         raise HTTPException(409, "session is still recording")
 
-    wav = Path(session["wav_path"])
+    wav = config.recording_path(session["wav_path"])
     if not wav.is_file():
         raise HTTPException(404, f"recording not found: {wav}")
 
@@ -263,7 +263,7 @@ def rerun_line(session_id: int, line_id: int) -> dict:
     if not session or not line or line["session_id"] != session_id:
         raise HTTPException(404, "no such line")
 
-    wav = Path(session["wav_path"])
+    wav = config.recording_path(session["wav_path"])
     if not wav.is_file():
         raise HTTPException(404, f"recording not found: {wav}")
 

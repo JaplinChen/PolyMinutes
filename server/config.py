@@ -12,6 +12,17 @@ CONFIG_PATH = ROOT / "config.json"
 RECORDINGS_DIR = ROOT / "recordings"
 MODELS_DIR = ROOT / "models"
 
+
+def recording_path(stored: str) -> Path:
+    """Resolve a session's stored wav path against the repo root.
+
+    Recordings are stored relative so renaming the project directory — or restoring a backup
+    somewhere else — does not strand every meeting: absolute paths written before that survive
+    only as long as the folder keeps its name, and this project has already outlived one name.
+    """
+    p = Path(stored)
+    return p if p.is_absolute() else ROOT / p
+
 # One file both sides read, so a bump moves the number everywhere it is shown. /api/health used to
 # answer a literal "0.1.0" that was tied to nothing — and the dashboard overwrites its own
 # build-time version with that answer, so the literal decided what the sidebar said. A bump in

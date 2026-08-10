@@ -117,8 +117,9 @@ def _stop_capture(refine: bool = True) -> dict:
     # otherwise skip the refine silently, which is the exact failure this whole change removes.
     if refine and session_id is not None:
         session = store.session(session_id)
-        if session and Path(session["wav_path"]).exists():
-            _refine(session_id, Path(session["wav_path"]))
+        wav = config.recording_path(session["wav_path"]) if session else None
+        if wav and wav.exists():
+            _refine(session_id, wav)
         else:
             log.warning("session %d has no recording on disk, not refining", session_id)
     return {"recording": False, "path": str(path) if path else None}
