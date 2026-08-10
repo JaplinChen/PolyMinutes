@@ -79,6 +79,8 @@
 }
 
 .learned-page .learned-name {
+  flex: 0 0 auto;
+  white-space: nowrap;
   padding: 0;
   border: none;
   background: none;
@@ -104,6 +106,9 @@
 }
 
 .learned-page .learned-lang {
+  flex: 0 0 auto;
+  margin-left: auto;
+  width: auto;
   padding: 4px 8px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -114,9 +119,13 @@
 }
 
 .learned-page .learned-clip {
-  margin-left: auto;
   height: 32px;
   max-width: 240px;
+}
+
+/* Language select is the right-group anchor when present; the clip then follows it, not the auto. */
+.learned-page .learned-lang + .learned-clip {
+  margin-left: 0;
 }
 
 .learned-page .learned-clip + .learned-forget {
