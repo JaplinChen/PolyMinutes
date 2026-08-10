@@ -148,7 +148,7 @@ macOS 用 `./start.command`。腳本會清掉佔用 port 的舊程序、建立�
 | `recordings/` | 原始錄音 |
 | `transcripts/` | `bench_wav` 產出的逐字稿 |
 
-環境變數可覆寫：`ANTHROPIC_API_KEY`、`POLYMINUTES_INPUT_DEVICE`、`POLYMINUTES_LANGUAGES`、`POLYMINUTES_WHISPER_MODEL`、`POLYMINUTES_GPU_INDEX`。
+環境變數可覆寫：`ANTHROPIC_API_KEY`、`POLYMINUTES_INPUT_DEVICE`、`POLYMINUTES_LANGUAGES`、`POLYMINUTES_WHISPER_MODEL`、`POLYMINUTES_GPU_INDEX`、`POLYMINUTES_GPU_MODEL`（GPU 路徑的 CTranslate2 模型，預設 `large-v3`）、`POLYMINUTES_NO_GPU`（設任意非空值即強制走 CPU）。
 
 ### 隱私模式：全程不出機
 
