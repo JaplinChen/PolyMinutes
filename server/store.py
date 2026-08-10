@@ -281,6 +281,15 @@ class Store(SpeakerStore):
                 self._db.rollback()
                 raise
 
+    def delete_session(self, session_id: int) -> None:
+        """Remove one meeting. Lines, translations, voiceprints, names and the summary all hang off
+        the session row with ON DELETE CASCADE, so the single delete takes everything derived from
+        the meeting with it. What the room learned globally — known speakers, corrections, the
+        glossary — deliberately survives."""
+        with self._lock:
+            self._db.execute("DELETE FROM session WHERE id=?", (session_id,))
+            self._db.commit()
+
     def session(self, session_id: int) -> dict | None:
         with self._lock:
             row = self._db.execute("SELECT * FROM session WHERE id=?", (session_id,)).fetchone()

@@ -124,6 +124,32 @@ def delete_correction(wrong: str) -> list[dict]:
     return get_corrections()
 
 
+@router.delete("/api/sessions/{session_id}")
+def delete_session(session_id: int) -> dict:
+    """Remove a meeting: the database rows and the recording on disk.
+
+    Refused while the meeting is recording or refining — a background pass would be writing lines
+    into a session that no longer exists. The wav goes too: without its session nothing can ever
+    reach it again, and a recording nobody can play is just disk the room quietly loses.
+    """
+    session = main.store.session(session_id)
+    if not session:
+        raise HTTPException(404, "no such session")
+    if main.state["session"] == session_id:
+        raise HTTPException(409, "session is still recording")
+    if (jobs.state(session_id) or {}).get("state") == "refining":
+        raise HTTPException(409, "session is being refined — wait for it to finish")
+
+    main.store.delete_session(session_id)
+    wav = config.recording_path(session["wav_path"])
+    try:
+        wav.unlink(missing_ok=True)
+    except OSError:
+        # The rows are gone either way; a wav Windows still holds open is lost disk, not a failure.
+        log.warning("could not remove recording %s", wav)
+    return {"deleted": session_id}
+
+
 @router.post("/api/sessions/{session_id}/reprocess")
 def reprocess(session_id: int) -> dict:
     """Queue a re-derivation from the recording, with the largest model and offline clustering.

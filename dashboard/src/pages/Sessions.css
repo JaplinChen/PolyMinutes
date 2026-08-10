@@ -62,6 +62,39 @@
   font-size: 0.9rem;
 }
 
+/* One row: the picker takes its capped width, the delete button hugs its own label beside it. */
+.sess-page .sess-picker-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Styled like the reprocess control but red on hover: it destroys a meeting. */
+.sess-page .sess-delete {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 4px;
+  padding: var(--space-2) 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.sess-page .sess-delete:hover:not(:disabled) {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.sess-page .sess-delete:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .sess-page .sess-hint {
   margin: 0 0 var(--space-3);
   color: var(--text-secondary);
