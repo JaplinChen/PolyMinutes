@@ -15,6 +15,8 @@ export interface KnownSpeaker {
   name: string;
   /** How many meetings this voice has been confirmed in. */
   sessions: number;
+  /** Forced transcription language for this voice; '' means auto-detect. */
+  language: string;
 }
 
 /** What the recogniser wrote against what was actually said, learned from an edit. */
@@ -181,6 +183,11 @@ export const appApi = {
     }),
   forgetSpeaker: (name: string) =>
     request<KnownSpeaker[]>(`/speakers/known/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+  setSpeakerLanguage: (name: string, language: string) =>
+    request<KnownSpeaker[]>(`/speakers/known/${encodeURIComponent(name)}/language`, {
+      method: 'PUT',
+      body: JSON.stringify({ language }),
+    }),
   corrections: () => request<LearnedCorrection[]>('/corrections'),
   // `wrong` is the key, so sending a different one renames the pair rather than adding another.
   editCorrection: (wrong: string, next: LearnedCorrection) =>

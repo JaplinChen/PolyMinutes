@@ -23,7 +23,7 @@ import soundfile as sf
 from . import asr, asr_gpu, config, correct, diarize, jobs, translate
 from .store import Store
 
-log = logging.getLogger("meettranslate.postprocess")
+log = logging.getLogger("polyminutes.postprocess")
 
 # Utterances a speaker must have before their own language statistics outweigh the meeting's.
 MIN_LANGUAGE_EVIDENCE = 4
@@ -270,9 +270,15 @@ def dominant_languages(utterances: list[Utterance]) -> dict[str, str]:
 
 
 def transcribe_all(utterances: list[Utterance], transcriber: asr.Transcriber,
-                   progress: Callable[[Utterance, int, int], None] | None = None) -> None:
+                   progress: Callable[[Utterance, int, int], None] | None = None,
+                   forced: dict[str, str] | None = None) -> None:
     """Two passes: detect each speaker's language, then re-transcribe anyone who was decoded
     under a language that disagrees with their majority.
+
+    `forced` maps a speaker code to the language the room has set for that recognised voice. It wins
+    over the detected majority: the majority is a guess from auto-detect, which flips a Chinese
+    speaker to Vietnamese often enough that a voice the room has already identified should not be
+    left to it. An empty or absent entry falls back to the majority, unchanged.
 
     `progress` is called after each first-pass decode. A ninety-minute recording spends most of an
     hour in that first loop, and a caller with somewhere to put partial results should not have to
@@ -298,8 +304,9 @@ def transcribe_all(utterances: list[Utterance], transcriber: asr.Transcriber,
                 progress(u, i, len(utterances))
 
     dominant = dominant_languages(utterances)
+    forced = forced or {}
     for u in utterances:
-        want = dominant.get(u.speaker, "")
+        want = forced.get(u.speaker) or dominant.get(u.speaker, "")
         # An utterance the first pass refused is retried too, not only one decoded under the wrong
         # language. Auto-detect collapses on perfectly ordinary speech often enough that dropping
         # those outright cost 992 real lines across seven interviews — 掃描機這件事情有 and
@@ -368,8 +375,13 @@ def rewrite_session(store: Store, session_id: int, wav: Path, cfg: config.Config
         if stop():
             raise jobs.Cancelled()
 
+    # A recognised voice with a language set is transcribed in it, not in whatever auto-detect
+    # guessed — the room's Vietnamese speaker stays Vietnamese, its Chinese speakers stay Chinese.
+    languages = store.speaker_languages()
+    forced = {code: lang for code, name in (recognised or {}).items() if (lang := languages.get(name))}
+
     with gpu():
-        transcribe_all(utterances, transcriber, progress=watch)
+        transcribe_all(utterances, transcriber, progress=watch, forced=forced)
 
     # The stored transcript is not touched until every line is translated. Replacing it line by
     # line as they came in meant a failure halfway through left the session holding half a

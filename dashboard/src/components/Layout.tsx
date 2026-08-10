@@ -110,7 +110,7 @@ export function Layout() {
             {isMobileOpen ? <X size={24} /> : <Menu size={24} />}
           </button>
           <div className="mobile-brand">
-            <img src="/favicon.svg" alt="MeetTranslate" className="sidebar-logo" />
+            <img src="/favicon.svg" alt="PolyMinutes" className="sidebar-logo" />
             <span className="brand-name">{t('common.appName')}</span>
           </div>
           <div style={{ width: 40 }} />
@@ -123,7 +123,7 @@ export function Layout() {
         className={`sidebar ${isCollapsed ? 'collapsed' : ''} ${isMobile ? 'mobile' : ''} ${isMobileOpen ? 'open' : ''}`}
       >
         <div className="sidebar-header">
-          <img src="/favicon.svg" alt="MeetTranslate" className="sidebar-logo" />
+          <img src="/favicon.svg" alt="PolyMinutes" className="sidebar-logo" />
           {!isCollapsed && (
             <div className="sidebar-brand">
               <span className="brand-name">{t('common.appName')}</span>

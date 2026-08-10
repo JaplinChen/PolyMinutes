@@ -25,6 +25,7 @@ export function Learned() {
   const [tab, setTab] = useState<'voices' | 'corrections'>('voices');
   const [speakers, setSpeakers] = useState<KnownSpeaker[]>([]);
   const [corrections, setCorrections] = useState<LearnedCorrection[]>([]);
+  const [langs, setLangs] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
@@ -36,11 +37,12 @@ export function Learned() {
 
   useEffect(() => {
     let alive = true;
-    Promise.all([appApi.knownSpeakers(), appApi.corrections()])
-      .then(([voices, fixes]) => {
+    Promise.all([appApi.knownSpeakers(), appApi.corrections(), appApi.getConfig()])
+      .then(([voices, fixes, cfg]) => {
         if (!alive) return;
         setSpeakers(voices);
         setCorrections(fixes);
+        setLangs(cfg.languages);
       })
       .catch(err => alive && fail(err))
       .finally(() => alive && setLoading(false));
@@ -53,6 +55,17 @@ export function Learned() {
     setBusy(true);
     try {
       setSpeakers(await appApi.forgetSpeaker(name));
+    } catch (err) {
+      fail(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const setLanguage = async (name: string, language: string) => {
+    setBusy(true);
+    try {
+      setSpeakers(await appApi.setSpeakerLanguage(name, language));
     } catch (err) {
       fail(err);
     } finally {
@@ -163,6 +176,21 @@ export function Learned() {
                   </button>
                 )}
                 <span className="learned-sessions">{t('learned.sessions', { count: s.sessions })}</span>
+                <select
+                  className="learned-lang"
+                  value={s.language}
+                  disabled={busy}
+                  aria-label={t('learned.language')}
+                  title={t('learned.language')}
+                  onChange={e => setLanguage(s.name, e.target.value)}
+                >
+                  <option value="">{t('learned.langAuto')}</option>
+                  {langs.map(c => (
+                    <option key={c} value={c}>
+                      {t(`lang.${c}`, { defaultValue: c })}
+                    </option>
+                  ))}
+                </select>
                 <audio
                   className="learned-clip"
                   controls

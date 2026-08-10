@@ -278,6 +278,8 @@
     "noCorrections": "No corrections learned yet. Edit a transcript line to teach one.",
     "forget": "Forget this",
     "rename": "Click to rename",
+    "language": "Force this voice's language",
+    "langAuto": "Auto-detect",
     "sessions": "meetings: {{count}}",
     "edit": "Edit this correction",
     "editWrong": "What it was misheard as",

@@ -21,7 +21,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Callable
 
-log = logging.getLogger("meettranslate.jobs")
+log = logging.getLogger("polyminutes.jobs")
 
 # Seconds a starting meeting waits for a cancelled pass to notice and let go. Cancellation is
 # checked between decode batches, so the wait is one batch, not one meeting.

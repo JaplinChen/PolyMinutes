@@ -94,6 +94,8 @@ def _diarizer(cfg: config.Config) -> diarize.Diarizer:
     d._cfg = cfg
     d.speakers = []
     d._last_code = None
+    d.recognised = {}
+    d._known_languages = {}
     return d
 
 
@@ -145,6 +147,44 @@ def test_pinned_language_never_changes() -> None:
         d.observe_language(spk, "en")
     assert spk.language == "zh"
     assert d.language_for(spk) == "zh"
+
+
+def test_a_recognised_voice_is_forced_to_its_set_language() -> None:
+    """A voice the room recognised and set to vi is transcribed in vi, even after auto-detect had
+    established zh for it — identity beats a per-utterance guess on a noisy room mic."""
+    d = _diarizer(config.Config())
+    spk = _speaker("zh")  # auto-detect established zh
+    d.recognised = {"S1": "阿笑"}
+    d._known_languages = {"阿笑": "vi"}
+    assert d.language_for(spk) == "vi"
+    # A voice with no set language falls back to what auto-detect established.
+    d._known_languages = {"阿笑": ""}
+    assert d.language_for(spk) == "zh"
+    # A voice that was not recognised is untouched.
+    d.recognised = {}
+    d._known_languages = {"阿笑": "vi"}
+    assert d.language_for(spk) == "zh"
+
+
+def test_transcribe_all_forces_a_recognised_speakers_language() -> None:
+    """The forced map (a recognised voice's set language) overrides the detected majority: a
+    Chinese speaker auto-detect flipped to vi is put back to zh, and re-decoded under it."""
+    class FakeTranscriber:
+        def transcribe_many(self, clips, language):
+            return [("xin chào", "vi") for _ in clips]  # auto-detect flips this speaker to vi
+
+        def transcribe(self, samples, language):
+            return (f"forced-{language}", language)
+
+    utts = [postprocess.Utterance(0.0, np.zeros(16000, dtype=np.float32), "S1")
+            for _ in range(3)]
+    postprocess.transcribe_all(utts, FakeTranscriber(), forced={"S1": "zh"})
+    assert all(u.lang == "zh" and u.text == "forced-zh" for u in utts), [(u.lang, u.text) for u in utts]
+
+    # Without a forced entry, the detected majority (vi) stands.
+    utts2 = [postprocess.Utterance(0.0, np.zeros(16000, dtype=np.float32), "S1")]
+    postprocess.transcribe_all(utts2, FakeTranscriber())
+    assert utts2[0].lang == "vi" and utts2[0].text == "xin chào"
 
 
 def test_offline_clustering_groups_similar_embeddings() -> None:

@@ -1,4 +1,4 @@
-# MeetTranslate 架構計劃
+# PolyMinutes 架構計劃
 
 會議室多語自動翻譯。即時字幕投影到電視 + 會後多語對照逐字稿。
 

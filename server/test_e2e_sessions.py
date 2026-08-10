@@ -509,7 +509,7 @@ def test_starting_without_models_says_which_file_is_missing(client: TestClient) 
 
     cfg = main.state["cfg"]
     saved = (cfg.whisper_model, config.WHISPER_DIRS["small"], audio.candidate_devices,
-             os.environ.get("MEETTRANSLATE_NO_GPU"))
+             os.environ.get("POLYMINUTES_NO_GPU"))
     # Deterministic on any machine: point the size this config resolves to at a path that is not
     # there (whisper_dir falls back to "small" for anything it does not know), keep the GPU
     # recogniser out of it since that one would succeed, and stub device resolution because it runs
@@ -517,15 +517,15 @@ def test_starting_without_models_says_which_file_is_missing(client: TestClient) 
     cfg.whisper_model = "small"
     config.WHISPER_DIRS["small"] = config.MODELS_DIR / "definitely-not-downloaded"
     audio.candidate_devices = lambda fragment: [None]
-    os.environ["MEETTRANSLATE_NO_GPU"] = "1"
+    os.environ["POLYMINUTES_NO_GPU"] = "1"
     try:
         started = client.post("/api/recording/start")
     finally:
         cfg.whisper_model, config.WHISPER_DIRS["small"], audio.candidate_devices, no_gpu = saved
         if no_gpu is None:
-            os.environ.pop("MEETTRANSLATE_NO_GPU", None)
+            os.environ.pop("POLYMINUTES_NO_GPU", None)
         else:
-            os.environ["MEETTRANSLATE_NO_GPU"] = no_gpu
+            os.environ["POLYMINUTES_NO_GPU"] = no_gpu
 
     assert started.status_code != 500, started.text
     assert started.status_code == 503, f"{started.status_code}: {started.text}"

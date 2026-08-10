@@ -1,4 +1,4 @@
-"""Settings for MeetTranslate. Loaded from config.json next to the repo root, env vars override."""
+"""Settings for PolyMinutes. Loaded from config.json next to the repo root, env vars override."""
 
 from __future__ import annotations
 
@@ -128,11 +128,11 @@ def load() -> Config:
                                       if k in Display.__dataclass_fields__})
     cfg = Config(**known)
 
-    if env := os.environ.get("MEETTRANSLATE_INPUT_DEVICE"):
+    if env := os.environ.get("POLYMINUTES_INPUT_DEVICE"):
         cfg.input_device = env
-    if env := os.environ.get("MEETTRANSLATE_LANGUAGES"):
+    if env := os.environ.get("POLYMINUTES_LANGUAGES"):
         cfg.languages = [s.strip() for s in env.split(",") if s.strip()]
-    if env := os.environ.get("MEETTRANSLATE_WHISPER_MODEL"):
+    if env := os.environ.get("POLYMINUTES_WHISPER_MODEL"):
         cfg.whisper_model = env
 
     return cfg
@@ -151,7 +151,7 @@ def gpu_model(languages: list[str] | None = None) -> str:
     `languages` is accepted because the choice is language-dependent in principle — it just has
     one answer today.
     """
-    return os.environ.get("MEETTRANSLATE_GPU_MODEL", "large-v3")
+    return os.environ.get("POLYMINUTES_GPU_MODEL", "large-v3")
 
 
 def gpu_index() -> int:
@@ -164,7 +164,7 @@ def gpu_index() -> int:
     apart. A machine with one card ignores this and shares it, as it did before.
     """
     try:
-        return int(os.environ.get("MEETTRANSLATE_GPU_INDEX", "0"))
+        return int(os.environ.get("POLYMINUTES_GPU_INDEX", "0"))
     except ValueError:
         return 0
 

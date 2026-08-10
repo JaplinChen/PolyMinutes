@@ -28,14 +28,14 @@ def test_weight_selection_prefers_quantized_for_live(tmp: Path) -> None:
 
 def test_gpu_backend_declines_cleanly_when_disabled(tmp: Path) -> None:
     """The GPU path must be optional: every caller falls back to sherpa-onnx when it says no."""
-    original = os.environ.get("MEETTRANSLATE_NO_GPU")
+    original = os.environ.get("POLYMINUTES_NO_GPU")
     try:
-        os.environ["MEETTRANSLATE_NO_GPU"] = "1"
+        os.environ["POLYMINUTES_NO_GPU"] = "1"
         assert asr_gpu.maybe(["zh", "en"]) is None
     finally:
-        os.environ.pop("MEETTRANSLATE_NO_GPU", None)
+        os.environ.pop("POLYMINUTES_NO_GPU", None)
         if original is not None:
-            os.environ["MEETTRANSLATE_NO_GPU"] = original
+            os.environ["POLYMINUTES_NO_GPU"] = original
 
 
 def test_autodetect_reports_the_language(tmp: Path) -> None:

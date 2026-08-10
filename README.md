@@ -1,4 +1,4 @@
-# MeetTranslate
+# PolyMinutes
 
 會議室即時多語翻譯。一台專用電腦以旁聽身分加入 Teams 會議，把發言即時轉錄、翻譯，投到會議室電視上；會後產出依發言者分段的多語對照逐字稿。
 
@@ -144,11 +144,11 @@ macOS 用 `./start.command`。腳本會清掉佔用 port 的舊程序、建立�
 | `config.json` | 語言、輸入裝置、模型、顯示格式 |
 | `llm.json` | LLM 供應商設定 |
 | `llm_keys.json` | 輪替用的 API 金鑰 |
-| `meettranslate.db` | 詞彙表、會議紀錄、逐字稿 |
+| `polyminutes.db` | 詞彙表、會議紀錄、逐字稿 |
 | `recordings/` | 原始錄音 |
 | `transcripts/` | `bench_wav` 產出的逐字稿 |
 
-環境變數可覆寫：`ANTHROPIC_API_KEY`、`MEETTRANSLATE_INPUT_DEVICE`、`MEETTRANSLATE_LANGUAGES`、`MEETTRANSLATE_WHISPER_MODEL`、`MEETTRANSLATE_GPU_INDEX`。
+環境變數可覆寫：`ANTHROPIC_API_KEY`、`POLYMINUTES_INPUT_DEVICE`、`POLYMINUTES_LANGUAGES`、`POLYMINUTES_WHISPER_MODEL`、`POLYMINUTES_GPU_INDEX`。
 
 ### 隱私模式：全程不出機
 
@@ -160,9 +160,9 @@ macOS 用 `./start.command`。腳本會清掉佔用 port 的舊程序、建立�
 
 ### 兩張顯卡：讓辨識與本地 LLM 各佔一張
 
-`MEETTRANSLATE_GPU_INDEX`（預設 `0`）指定辨識器用哪張 CUDA 卡。單張卡不必理會。
+`POLYMINUTES_GPU_INDEX`（預設 `0`）指定辨識器用哪張 CUDA 卡。單張卡不必理會。
 
-會後的摘要與辨識校正若走本地 Ollama（不出機，適合客戶訪談），Ollama 預設也搶第 0 張卡，會與正在錄音的辨識器搶記憶體。兩張卡時把它們分開：辨識器留 `MEETTRANSLATE_GPU_INDEX=0`，Ollama daemon 以 `CUDA_VISIBLE_DEVICES=1 ollama serve` 啟動，落在另一張。走雲端（Anthropic）則沒有這個問題，摘要不碰 GPU。
+會後的摘要與辨識校正若走本地 Ollama（不出機，適合客戶訪談），Ollama 預設也搶第 0 張卡，會與正在錄音的辨識器搶記憶體。兩張卡時把它們分開：辨識器留 `POLYMINUTES_GPU_INDEX=0`，Ollama daemon 以 `CUDA_VISIBLE_DEVICES=1 ollama serve` 啟動，落在另一張。走雲端（Anthropic）則沒有這個問題，摘要不碰 GPU。
 
 ## 開發
 
@@ -262,7 +262,7 @@ cd dashboard && npm run dev
 
 即時字幕延遲：一般短句約 2 秒，16 秒長句 4.8 秒（含模型首次載入）。
 
-沒有顯卡也能跑，退回 sherpa-onnx CPU 路徑；設 `MEETTRANSLATE_NO_GPU=1` 可強制不用 GPU。
+沒有顯卡也能跑，退回 sherpa-onnx CPU 路徑；設 `POLYMINUTES_NO_GPU=1` 可強制不用 GPU。
 
 ### GPU 安裝
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-log = logging.getLogger("meettranslate.hub")
+log = logging.getLogger("polyminutes.hub")
 
 QUEUE_SIZE = 256
 

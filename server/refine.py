@@ -21,7 +21,7 @@ from opencc import OpenCC
 from .guards import accept
 from .store import Term
 
-log = logging.getLogger("meettranslate.refine")
+log = logging.getLogger("polyminutes.refine")
 
 # Lines per request. Large enough that a term corrected early informs the rest, small enough that
 # the model still has every line in view when it answers.

@@ -1,4 +1,4 @@
-# MeetTranslate Dashboard
+# PolyMinutes Dashboard
 
 React + Vite frontend. The built output is served by the Python service, so in normal use there is
 nothing to run here — `start.bat` / `start.command` builds it.
