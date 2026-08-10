@@ -33,7 +33,7 @@ interface Props {
 function Row({ line, speakerOptions, newSpeakerCode, langs, locked, draftText, isRerunning, rerunBlocked, isPlaying, playable, onDraft, onSave, onRerun, onRetranslate, onPlay, onReassign }: Props) {
   const { t } = useTranslation();
   const editing = draftText === null ? null : { id: line.id, text: draftText };
-  const [shown, setShown] = useState(true);
+  const [shown, setShown] = useState(false);
   const has = langs.some(l => line.translations[l]);
 
   return (

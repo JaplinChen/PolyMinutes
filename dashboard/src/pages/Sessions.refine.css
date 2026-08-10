@@ -83,6 +83,15 @@
   position: relative;
 }
 
+/* The tools float top-right of sess-body; without this the source's first line runs under them.
+   A floated spacer notches the top-right corner so long text wraps below the buttons. */
+.sess-page .sess-source::before {
+  content: '';
+  float: right;
+  width: 3.4rem;
+  height: 1.5em;
+}
+
 .sess-page .sess-trans-tools {
   position: absolute;
   top: 0;
