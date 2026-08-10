@@ -45,6 +45,16 @@ def get_lines(session_id: int) -> dict:
     return {"lines": main.store.lines(session_id), "speakers": main.store.speaker_names(session_id)}
 
 
+@router.put("/api/sessions/{session_id}/reference")
+def put_reference(session_id: int, body: dict) -> dict:
+    """Store pre-meeting notes for this session. Folded into the summary prompt when it regenerates."""
+    if not main.store.session(session_id):
+        raise HTTPException(404, "no such session")
+    reference = str(body.get("reference", ""))
+    main.store.set_reference(session_id, reference)
+    return {"reference": reference}
+
+
 @router.put("/api/sessions/{session_id}/lines/{line_id}")
 def put_line(session_id: int, line_id: int, body: dict) -> dict:
     """Correct one transcript line, and learn the pair.

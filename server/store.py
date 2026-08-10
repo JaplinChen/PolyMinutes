@@ -115,6 +115,14 @@ class Store(SpeakerStore):
             self._db.commit()
             return int(cur.lastrowid)
 
+    def set_reference(self, session_id: int, text: str) -> None:
+        """Store the meeting's pre-meeting notes. Not a transcript change, so lines_rev is untouched:
+        a summary already generated stays 'current', and the user regenerates it if they want the
+        reference folded in."""
+        with self._lock:
+            self._db.execute("UPDATE session SET reference=? WHERE id=?", (text, session_id))
+            self._db.commit()
+
     def end_session(self, session_id: int, ended: str) -> None:
         with self._lock:
             self._db.execute("UPDATE session SET ended=? WHERE id=?", (ended, session_id))

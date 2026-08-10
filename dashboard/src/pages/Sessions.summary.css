@@ -152,6 +152,37 @@
   cursor: not-allowed;
 }
 
+.sess-page .sess-reference {
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.sess-page .sess-reference-label {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.sess-page .sess-reference-input {
+  width: 100%;
+  margin-top: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.82rem;
+  resize: vertical;
+}
+
+.sess-page .sess-reference-input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
 /* The card before there is anything to show: a title and one button, not an empty shell. */
 .sess-page .sess-summary-cta {
   display: flex;
