@@ -355,7 +355,10 @@ def rerun_line(session_id: int, line_id: int) -> dict:
             text, used = "", ""
 
     if not text:
-        main.store.replace_line(line_id, line["source"], line["lang"], {}, "asr_failed")
+        # An empty source, not the old text: what was there before a failed re-run is either a
+        # bad guess or a hallucination, and showing it under a 未能辨識 badge reads as if
+        # someone said it.
+        main.store.replace_line(line_id, "", line["lang"], {}, "asr_failed")
         return _transcript(session_id, "asr_failed")
 
     text = correct.Corrector(main.store.glossary(), main.store.corrections()).fix(text)

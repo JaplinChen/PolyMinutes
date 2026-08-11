@@ -117,7 +117,9 @@ function Row({ line, speakerOptions, newSpeakerCode, langs, locked, draftText, i
               if (!locked) onDraft({ id: line.id, text: line.source });
             }}
           >
-            {line.source}
+            {/* A failed re-run clears the text; the dash keeps the paragraph clickable so the
+                correct words can still be typed in by hand. */}
+            {line.source || '—'}
           </p>
         )}
         {/* Icon-only and out of the flow: labelled buttons pushed every translation down a line and
