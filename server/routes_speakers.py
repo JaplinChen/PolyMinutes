@@ -55,7 +55,9 @@ def merge_speakers(session_id: int, body: dict) -> dict:
 def get_known_speakers() -> list[dict]:
     counts = main.store.speaker_sessions()
     langs = main.store.speaker_languages()
-    return [{"name": name, "sessions": counts.get(name, 0), "language": langs.get(name, "")}
+    depts = main.store.speaker_departments()
+    return [{"name": name, "sessions": counts.get(name, 0), "language": langs.get(name, ""),
+             "department": depts.get(name, "")}
             for name, _ in main.store.known_speakers()]
 
 
@@ -148,6 +150,12 @@ def set_known_speaker_language(name: str, body: dict) -> list[dict]:
     if language not in allowed:
         raise HTTPException(400, f"language must be one of {sorted(allowed)}")
     main.store.set_speaker_language(name, language)
+    return get_known_speakers()
+
+
+@router.put("/api/speakers/known/{name}/department")
+def set_known_speaker_department(name: str, body: dict) -> list[dict]:
+    main.store.set_speaker_department(name, str(body.get("department", "")).strip())
     return get_known_speakers()
 
 

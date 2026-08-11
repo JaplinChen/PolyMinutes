@@ -62,6 +62,21 @@ export function Learned() {
     }
   };
 
+  // Saved on blur/Enter like the rename box; local drafts so typing does not fire a request per key.
+  const [deptDrafts, setDeptDrafts] = useState<Record<string, string>>({});
+  const saveDepartment = async (name: string, current: string) => {
+    const next = (deptDrafts[name] ?? current).trim();
+    if (next === current) return;
+    setBusy(true);
+    try {
+      setSpeakers(await appApi.setSpeakerDepartment(name, next));
+    } catch (err) {
+      fail(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const setLanguage = async (name: string, language: string) => {
     setBusy(true);
     try {
@@ -176,6 +191,17 @@ export function Learned() {
                   </button>
                 )}
                 <span className="learned-sessions">{t('learned.sessions', { count: s.sessions })}</span>
+                <input
+                  className="learned-dept"
+                  value={deptDrafts[s.name] ?? s.department}
+                  placeholder={t('learned.department')}
+                  aria-label={t('learned.department')}
+                  title={t('learned.department')}
+                  disabled={busy}
+                  onChange={e => setDeptDrafts(d => ({ ...d, [s.name]: e.target.value }))}
+                  onBlur={() => saveDepartment(s.name, s.department)}
+                  onKeyDown={e => e.key === 'Enter' && e.currentTarget.blur()}
+                />
                 <select
                   className="learned-lang"
                   value={s.language}

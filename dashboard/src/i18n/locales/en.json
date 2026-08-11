@@ -290,6 +290,7 @@
     "rename": "Click to rename",
     "language": "Force this voice's language",
     "langAuto": "Auto-detect",
+    "department": "Department",
     "sessions": "meetings: {{count}}",
     "edit": "Edit this correction",
     "editWrong": "What it was misheard as",

@@ -17,6 +17,8 @@ export interface KnownSpeaker {
   sessions: number;
   /** Forced transcription language for this voice; '' means auto-detect. */
   language: string;
+  /** Department this person belongs to; '' when unset. Fed to the summary for stance. */
+  department: string;
 }
 
 /** What the recogniser wrote against what was actually said, learned from an edit. */
@@ -189,6 +191,11 @@ export const appApi = {
     request<KnownSpeaker[]>(`/speakers/known/${encodeURIComponent(name)}/language`, {
       method: 'PUT',
       body: JSON.stringify({ language }),
+    }),
+  setSpeakerDepartment: (name: string, department: string) =>
+    request<KnownSpeaker[]>(`/speakers/known/${encodeURIComponent(name)}/department`, {
+      method: 'PUT',
+      body: JSON.stringify({ department }),
     }),
   corrections: () => request<LearnedCorrection[]>('/corrections'),
   // `wrong` is the key, so sending a different one renames the pair rather than adding another.

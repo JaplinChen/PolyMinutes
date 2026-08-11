@@ -290,6 +290,7 @@
     "rename": "點一下改名",
     "language": "強制這個聲音的語言",
     "langAuto": "自動判斷",
+    "department": "部門",
     "sessions": "會議 {{count}} 場",
     "edit": "編輯這條修正",
     "editWrong": "辨識成什麼",

@@ -105,6 +105,24 @@
   font-size: 12px;
 }
 
+.learned-page .learned-dept {
+  flex: 0 0 auto;
+  margin-left: auto;
+  width: 110px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input, var(--bg-card));
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+}
+
+/* Department is the right-group anchor now; the language select follows it, not the auto margin. */
+.learned-page .learned-dept + .learned-lang {
+  margin-left: 0;
+}
+
 .learned-page .learned-lang {
   flex: 0 0 auto;
   margin-left: auto;

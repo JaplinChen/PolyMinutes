@@ -148,8 +148,12 @@ def _summarize_stage(store: Store, session_id: int, languages: list[str],
 
     session = store.session(session_id)
     reference = session.get("reference", "") if session else ""
+    depts = store.speaker_departments()
+    speakers = {code: f"{name} ({depts[name]})" if depts.get(name) else name
+                for code, name in store.speaker_names(session_id).items() if name}
     result, status = summarize.summarize(lines, languages, _cancellable(chat, cancel),
-                                         should_stop=cancel.is_set, reference=reference)
+                                         speakers=speakers, should_stop=cancel.is_set,
+                                         reference=reference)
     # Landed even when partial: two of three languages beats none, the card says so, and
     # regenerating later is one click. Nothing at all came back → failed is still worth storing,
     # because "tried and failed" and "never ran" are different answers to "where is my summary".
