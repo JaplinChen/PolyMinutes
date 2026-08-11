@@ -122,6 +122,11 @@ def build_prompt(lines: list[SummaryLine], lang: str, rules: str,
     if reference := reference.strip():
         parts += ["", "Background notes provided before the meeting (context only, not spoken):",
                   reference[:REFERENCE_BUDGET]]
+    # Who each code is, with their department where known: stance ("the QA lead objected") can be
+    # read from role instead of guessed from tone. Only named codes are listed — an S7 nobody named
+    # tells the model nothing it cannot see in the transcript.
+    if speakers:
+        parts += ["", "Speakers:"] + [f"{code} = {label}" for code, label in speakers.items()]
     if sampled:
         parts += ["", "The transcript below is an evenly-sampled excerpt of a longer meeting."]
 

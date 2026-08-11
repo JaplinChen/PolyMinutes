@@ -65,7 +65,8 @@ CREATE TABLE IF NOT EXISTS known_speaker (
     name     TEXT PRIMARY KEY,
     centroid BLOB NOT NULL,
     sessions INTEGER NOT NULL DEFAULT 1,
-    language TEXT NOT NULL DEFAULT ''
+    language TEXT NOT NULL DEFAULT '',
+    department TEXT NOT NULL DEFAULT ''
 );
 -- One person sounds different across the room, the mic and their mood, and a single meeting can
 -- split them across several codes. Naming all of them stores every variant here, not just the
@@ -122,6 +123,9 @@ SESSION_COLUMNS = (
 # which is what every voice learned before this column existed keeps.
 KNOWN_SPEAKER_COLUMNS = (
     ("language", "ALTER TABLE known_speaker ADD COLUMN language TEXT NOT NULL DEFAULT ''"),
+    # Which side of the table a voice sits on. Fed to the summary prompt so stance and follow-ups
+    # are read against the speaker's role, not guessed from tone.
+    ("department", "ALTER TABLE known_speaker ADD COLUMN department TEXT NOT NULL DEFAULT ''"),
 )
 
 

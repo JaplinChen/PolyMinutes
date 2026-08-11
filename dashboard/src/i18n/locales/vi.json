@@ -290,6 +290,7 @@
     "rename": "Bấm để đổi tên",
     "language": "Buộc ngôn ngữ cho giọng này",
     "langAuto": "Tự nhận",
+    "department": "Phòng ban",
     "sessions": "{{count}} cuộc họp",
     "edit": "Sửa chỉnh sửa này",
     "editWrong": "Nghe nhầm thành",

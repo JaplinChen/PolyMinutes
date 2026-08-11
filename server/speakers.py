@@ -155,6 +155,18 @@ class SpeakerStore:
             return {r["name"]: r["language"] for r in self._db.execute(
                 "SELECT name, language FROM known_speaker WHERE name != ''")}
 
+    def set_speaker_department(self, name: str, department: str) -> None:
+        with self._lock:
+            self._db.execute("UPDATE known_speaker SET department=? WHERE name=?", (department, name))
+            self._db.commit()
+
+    def speaker_departments(self) -> dict[str, str]:
+        """Every known voice's department, '' where none is set — for the Learned page and the
+        summary prompt, where a name plus a department is what lets stance be read, not guessed."""
+        with self._lock:
+            return {r["name"]: r["department"] for r in self._db.execute(
+                "SELECT name, department FROM known_speaker WHERE name != ''")}
+
     def known_voiceprints(self) -> list[tuple[str, bytes]]:
         """Every stored voiceprint with its current name, for recognising a voice next meeting.
 
@@ -217,12 +229,13 @@ class SpeakerStore:
 
         One sample per meeting the voice was named in: `idx` walks meetings newest-first, so the
         learned page can play the voice from each meeting it knows, not just the latest. Within a
-        meeting, the earliest line — MIN(l.start) makes the bare wav/end_time columns come from
-        that same row (SQLite min-row semantics).
+        meeting, the longest utterance — "謝謝" identifies nobody — with the MAX aggregate making
+        the bare wav/start/end columns come from that same row (SQLite max-row semantics).
         """
         with self._lock:
             row = self._db.execute(
-                "SELECT s.wav_path AS wav, MIN(l.start) AS start, l.end_time AS end_time "
+                "SELECT s.wav_path AS wav, l.start AS start, l.end_time AS end_time, "
+                "MAX(COALESCE(l.end_time - l.start, 0)) "
                 "FROM speaker_name sn "
                 "JOIN line l ON l.session_id=sn.session_id AND l.speaker=sn.code "
                 "JOIN session s ON s.id=sn.session_id "
