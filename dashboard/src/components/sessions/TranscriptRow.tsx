@@ -134,6 +134,20 @@ function Row({ line, speakerOptions, newSpeakerCode, langs, locked, draftText, i
               {shown ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
             </button>
           )}
+          {/* Failed lines already carry a labelled rerun button in their status row; this
+              icon-only one gives every ok line the same escape hatch for misheard words. */}
+          {line.status === 'ok' && (
+            <button
+              type="button"
+              className="sess-trans-btn"
+              disabled={rerunBlocked || locked || !playable}
+              title={!playable ? t('sessions.noRecording') : isRerunning ? t('sessions.rerunning') : t('sessions.rerunLine')}
+              aria-label={t('sessions.rerunLine')}
+              onClick={() => onRerun(line.id)}
+            >
+              <RotateCw size={13} />
+            </button>
+          )}
           <button
             type="button"
             className="sess-trans-btn"
