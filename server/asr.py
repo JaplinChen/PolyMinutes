@@ -87,10 +87,11 @@ _HALLUCINATIONS = re.compile(
     # 本集 followed by an ending, with room for the words between: the line seen in the wild was
     # 本集就這樣結束了, not 本集完. The lookahead keeps 本集團 out — 本集團的專案結束了 is a
     # sentence this room says.
-    r"|歡迎收看|感謝收看|本集(?!團).{0,4}(完|結束|到此)|本期(完|播放)|本節目|下部節目"
+    r"|歡迎收[看睇]|感謝收[看睇]|本集(?!團).{0,4}(完|結束|到此)|本期(完|播放)|本節目|下部節目"
     # 收看 is television vocabulary; a meeting says 看 or 收到. The gap allows 謝謝大家的收看,
-    # which is what the recording actually produced.
-    r"|(請您|敬請|歡迎)關注|(謝謝|感謝)[^。！!]{0,4}收看"
+    # which is what the recording actually produced. 收睇 and 多謝 are the same sign-off in
+    # Cantonese — 多謝您收睇時局新聞,再會! arrived on a re-run over near-silence.
+    r"|(請您|敬請|歡迎)關注|(謝謝|感謝|多謝)[^。！!]{0,4}收[看睇]"
     # The editor's credit, whole-line only. A wildcard after 剪輯 would eat 剪輯機台 and
     # 影片剪輯外包, and this filter runs on the live path too, where a false positive drops a
     # subtitle with nothing to show it happened. So: the line is nothing but 剪輯 and a name.

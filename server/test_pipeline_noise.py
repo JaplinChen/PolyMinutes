@@ -17,7 +17,8 @@ def test_subtitling_credits_are_not_speech() -> None:
     """
     for text in ("MING PAO CANADA MANGA", "MING PAO CANADA 字幕組",
                  "中文字幕由 Amara.org 社群提供", "本期影片就分享到這裡,謝謝收看",
-                 "多謝您的收看,我們下期見!", "希望大家多多支援"):
+                 "多謝您的收看,我們下期見!", "希望大家多多支援",
+                 "多謝您收睇時局新聞,再會!", "歡迎收睇"):
         assert asr.is_hallucination(text), text
 
     # A sign-off is the end of a line; arranging a meeting is not.
