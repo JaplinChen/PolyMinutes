@@ -191,12 +191,17 @@ export function Learned() {
                     </option>
                   ))}
                 </select>
-                <audio
-                  className="learned-clip"
-                  controls
-                  preload="none"
-                  src={`${API_BASE_URL}/speakers/known/${encodeURIComponent(s.name)}/clip`}
-                />
+                <div className="learned-clips">
+                  {Array.from({ length: Math.max(s.sessions, 1) }, (_, i) => (
+                    <audio
+                      key={i}
+                      className="learned-clip"
+                      controls
+                      preload="none"
+                      src={`${API_BASE_URL}/speakers/known/${encodeURIComponent(s.name)}/clip?idx=${i}`}
+                    />
+                  ))}
+                </div>
                 <button
                   className="learned-forget"
                   disabled={busy}

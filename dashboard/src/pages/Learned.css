@@ -118,17 +118,23 @@
   font-size: 12px;
 }
 
+.learned-page .learned-clips {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .learned-page .learned-clip {
   height: 32px;
   max-width: 240px;
 }
 
-/* Language select is the right-group anchor when present; the clip then follows it, not the auto. */
-.learned-page .learned-lang + .learned-clip {
+/* Language select is the right-group anchor when present; the clips then follow it, not the auto. */
+.learned-page .learned-lang + .learned-clips {
   margin-left: 0;
 }
 
-.learned-page .learned-clip + .learned-forget {
+.learned-page .learned-clips + .learned-forget {
   margin-left: 0;
 }
 

@@ -209,20 +209,26 @@ class SpeakerStore:
                 "JOIN known_speaker ks ON ks.name = sn.name "
                 "WHERE sn.name != '' GROUP BY sn.name")}
 
-    def speaker_sample(self, name: str) -> tuple[str, float, float | None] | None:
+    def speaker_sample(self, name: str, idx: int = 0) -> tuple[str, float, float | None] | None:
         """Where to hear this voice, and how long that utterance lasts.
 
         Derived rather than stored — a name is only ever attached on the transcript page, so the
         transcript already knows which recording and which second to play.
+
+        One sample per meeting the voice was named in: `idx` walks meetings newest-first, so the
+        learned page can play the voice from each meeting it knows, not just the latest. Within a
+        meeting, the earliest line — MIN(l.start) makes the bare wav/end_time columns come from
+        that same row (SQLite min-row semantics).
         """
         with self._lock:
             row = self._db.execute(
-                "SELECT s.wav_path AS wav, l.start AS start, l.end_time AS end_time "
+                "SELECT s.wav_path AS wav, MIN(l.start) AS start, l.end_time AS end_time "
                 "FROM speaker_name sn "
                 "JOIN line l ON l.session_id=sn.session_id AND l.speaker=sn.code "
                 "JOIN session s ON s.id=sn.session_id "
-                "WHERE sn.name=? ORDER BY sn.session_id DESC, l.start LIMIT 1",
-                (name,),
+                "WHERE sn.name=? GROUP BY sn.session_id "
+                "ORDER BY sn.session_id DESC LIMIT 1 OFFSET ?",
+                (name, idx),
             ).fetchone()
         return _sample(row)
 
