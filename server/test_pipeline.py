@@ -14,10 +14,10 @@ from __future__ import annotations
 from typing import Callable
 
 from . import test_pipeline_asr, test_pipeline_correct, test_pipeline_diarize
-from . import test_pipeline_llm, test_pipeline_noise, test_pipeline_refine
+from . import test_pipeline_llm, test_pipeline_noise, test_pipeline_refine, test_pipeline_segment
 
 MODULES = (test_pipeline_asr, test_pipeline_correct, test_pipeline_diarize,
-           test_pipeline_llm, test_pipeline_noise, test_pipeline_refine)
+           test_pipeline_llm, test_pipeline_noise, test_pipeline_refine, test_pipeline_segment)
 
 
 def collect() -> list[tuple[str, Callable]]:

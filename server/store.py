@@ -159,6 +159,44 @@ class Store(SpeakerStore):
             self._bump_rev_for_line(line_id)
             self._db.commit()
 
+    def set_line_source(self, line_id: int, source: str) -> None:
+        """Rewrite a line's text without claiming it was refined.
+
+        The punctuation pass uses this: it only inserts punctuation, which is not a refinement,
+        and marking the line refined would block the correction pass that runs after it.
+        """
+        with self._lock:
+            self._db.execute("UPDATE line SET source=? WHERE id=?", (source, line_id))
+            self._bump_rev_for_line(line_id)
+            self._db.commit()
+
+    def merge_lines(self, keep_id: int, absorb_ids: list[int], source: str,
+                    end_time: float | None, translations: dict[str, str]) -> None:
+        """Fold VAD-split fragments into their first line.
+
+        The kept line takes the joined text, the last fragment's end time and the joined
+        translations; the absorbed rows vanish (their translations cascade). One transaction,
+        so a failure leaves the fragments as they were rather than half-merged.
+        """
+        if not absorb_ids:
+            return
+        marks = ",".join("?" * len(absorb_ids))
+        with self._lock:
+            try:
+                self._db.execute("UPDATE line SET source=?, end_time=? WHERE id=?",
+                                 (source, end_time, keep_id))
+                self._db.execute(f"DELETE FROM line WHERE id IN ({marks})", absorb_ids)
+                self._db.execute("DELETE FROM line_translation WHERE line_id=?", (keep_id,))
+                self._db.executemany(
+                    "INSERT INTO line_translation (line_id, lang, text) VALUES (?,?,?)",
+                    [(keep_id, k, v) for k, v in translations.items()],
+                )
+                self._bump_rev_for_line(keep_id)
+                self._db.commit()
+            except Exception:
+                self._db.rollback()
+                raise
+
     def set_line_speaker(self, line_id: int, speaker: str) -> None:
         """Reassign one line to a different speaker.
 

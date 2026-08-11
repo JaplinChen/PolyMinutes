@@ -25,7 +25,7 @@ import threading
 import time
 from typing import Callable
 
-from . import jobs, llm, refine, summarize
+from . import jobs, llm, refine, segment, summarize
 from .store import Store
 
 log = logging.getLogger("polyminutes.postmeeting")
@@ -100,6 +100,44 @@ def _cancellable(chat: Callable[[str], str], cancel: threading.Event) -> Callabl
     return wrapped
 
 
+def _segment_stage(store: Store, session_id: int, chat: Callable[[str], str] | None) -> None:
+    """Join the fragments the VAD cut mid-sentence, then have the model restore punctuation.
+
+    Runs before refine, deliberately: the punctuation write must not mark lines refined (it uses
+    set_line_source, which doesn't), and refine reads whole sentences better than fragments. The
+    merge is pure arithmetic and runs even with no LLM configured; only punctuation needs `chat`.
+    """
+    rows = store.lines(session_id)
+    joined = 0
+    for group in segment.merge_groups(rows):
+        keep, absorbed = rows[group[0]], [rows[i] for i in group[1:]]
+        text, end_time, translations = segment.join(keep, absorbed)
+        store.merge_lines(keep["id"], [r["id"] for r in absorbed], text, end_time, translations)
+        joined += len(absorbed)
+    if chat is None:
+        log.info("segment stage: %d fragments joined, no LLM for punctuation", joined)
+        return
+    if joined:
+        rows = store.lines(session_id)
+    punctuated = 0
+    for start in range(0, len(rows), refine.CHUNK_LINES):
+        chunk = rows[start : start + refine.CHUNK_LINES]
+        texts = [r["source"] for r in chunk]
+        try:
+            out = segment.parse_response(chat(segment.build_prompt(texts)), texts)
+        except jobs.Cancelled:
+            raise
+        except Exception:
+            log.exception("punctuation failed at line %d, keeping originals", start)
+            continue
+        for row, text in zip(chunk, out):
+            # A human-corrected line's punctuation is the human's choice.
+            if text != row["source"] and not row["refined"]:
+                store.set_line_source(row["id"], text)
+                punctuated += 1
+    log.info("segment stage: %d fragments joined, %d lines punctuated", joined, punctuated)
+
+
 def _refine_stage(store: Store, session_id: int, chat: Callable[[str], str]) -> None:
     rows = store.lines(session_id)
     if not rows:
@@ -172,6 +210,11 @@ def followup(store: Store, languages: list[str], llm_cfg: llm.LlmConfig, api_key
         # Refine corrects the transcript's own words, a Traditional-Chinese comprehension job closer to
         # the summary than to translation, so it rides the summary model rather than the translator's.
         chat = chat_for(llm_cfg, api_key, max_tokens=4000, model=llm_cfg.summary_model)
+
+        set_stage("segment")
+        if cancel.is_set():
+            raise jobs.Cancelled()
+        _segment_stage(store, session_id, _cancellable(chat, cancel) if chat else None)
 
         # Refine needs a model; with none configured it is simply skipped. Summarize still runs,
         # because _summarize_stage records a "no_llm" state that the session card reads as "configure

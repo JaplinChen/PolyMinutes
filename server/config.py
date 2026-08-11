@@ -118,9 +118,10 @@ class Config:
     language_switch_after: int = 3
     language_switch_after_zh_en: int = 6
     # Silence (seconds) that ends a live utterance. 0.5 cut speakers mid-breath into half-sentences
-    # that reached Whisper as fragments and collapsed into filler; 0.7 rides over the pauses while
-    # still feeling responsive. Tune per room — quieter, slower speakers may want it higher.
-    vad_min_silence: float = 0.7
+    # that reached Whisper as fragments and collapsed into filler; 0.7 still split sentences at
+    # thinking pauses often enough that the post-meeting pass grew a merge stage. 0.9 rides over
+    # those too, at the cost of subtitles arriving a beat later. Tune per room.
+    vad_min_silence: float = 0.9
     # Speaker code -> language code. Pins a speaker so detection never overrides it.
     pinned_languages: dict[str, str] = field(default_factory=dict)
     display: Display = field(default_factory=Display)

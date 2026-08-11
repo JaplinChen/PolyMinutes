@@ -72,7 +72,7 @@ export interface RecordingStatus {
 export type RefineState = 'idle' | 'refining' | 'refined' | 'failed' | 'cancelled';
 
 /** Which part of the post-meeting pass is running; absent when there has not been one. */
-export type RefineStage = 'rewrite' | 'refine' | 'summarize';
+export type RefineStage = 'rewrite' | 'segment' | 'refine' | 'summarize';
 
 export interface SessionSummary {
   id: number;

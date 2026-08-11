@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 
+import numpy as np
 import soundfile as sf
 from fastapi import APIRouter, HTTPException, Response
 
@@ -16,13 +17,57 @@ router = APIRouter()
 MAX_LINE_SECONDS = 60.0
 
 
+_extractor = None
+
+
+def _embed(samples: np.ndarray, rate: int) -> np.ndarray:
+    global _extractor
+    if _extractor is None:
+        import sherpa_onnx
+        _extractor = sherpa_onnx.SpeakerEmbeddingExtractor(
+            sherpa_onnx.SpeakerEmbeddingExtractorConfig(model=str(config.SPEAKER_MODEL), num_threads=1))
+    stream = _extractor.create_stream()
+    stream.accept_waveform(rate, samples)
+    stream.input_finished()
+    return np.array(_extractor.compute(stream), dtype=np.float32)
+
+
+def _derive_voiceprint(session_id: int, code: str) -> bytes | None:
+    """Cut a centroid for a code that has none, from the lines it labels.
+
+    A code minted by reassigning transcript lines never went through the diariser, so naming it
+    used to teach nothing. Its lines still point at the recording; that audio is the voiceprint.
+    """
+    session = main.store.session(session_id)
+    if session is None or not session["wav_path"]:
+        return None
+    wav = config.recording_path(session["wav_path"])
+    if not wav.is_file():
+        return None
+    spans = [(float(l["start"]), float(l["end_time"]) - float(l["start"]))
+             for l in main.store.lines(session_id)
+             if l["speaker"] == code and l["end_time"] is not None
+             and config.MIN_EMBED_SECONDS <= float(l["end_time"]) - float(l["start"]) <= MAX_LINE_SECONDS]
+    if not spans:
+        return None
+    embeddings = []
+    with sf.SoundFile(wav) as f:
+        for start, span in sorted(spans, key=lambda s: -s[1])[:3]:
+            f.seek(min(int(start * f.samplerate), max(len(f) - 1, 0)))
+            samples = f.read(int(span * f.samplerate), dtype="float32")
+            embeddings.append(_embed(samples, f.samplerate))
+    centroid = np.mean(embeddings, axis=0).astype(np.float32).tobytes()
+    main.store.save_voiceprint(session_id, code, centroid)
+    return centroid
+
+
 @router.put("/api/sessions/{session_id}/speakers")
 def put_speaker_names(session_id: int, body: dict) -> dict:
     previous = main.store.speaker_names(session_id)
     for code, name in body.items():
         code, name = str(code), str(name).strip()
         main.store.set_speaker_name(session_id, code, name)
-        centroid = main.store.voiceprint(session_id, code)
+        centroid = main.store.voiceprint(session_id, code) or _derive_voiceprint(session_id, code)
         if centroid is None:
             continue
         # Correcting a wrong name is the correction, not just a new label: the print that pulled
