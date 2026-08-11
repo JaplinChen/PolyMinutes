@@ -189,6 +189,31 @@ def test_naming_a_speaker_teaches_the_room_their_voice(client: TestClient) -> No
     assert client.delete("/api/speakers/known/Vincent").json() == []
 
 
+def test_naming_a_reassigned_code_learns_the_voice_from_its_lines(client: TestClient) -> None:
+    """A code minted by reassigning lines has no diariser voiceprint; naming it must derive one
+    from the audio its lines point at instead of silently teaching nothing."""
+    import soundfile as sf
+
+    from . import routes_speakers
+
+    wav = config.RECORDINGS_DIR / "derive.wav"
+    wav.parent.mkdir(parents=True, exist_ok=True)
+    sf.write(str(wav), np.zeros(config.SAMPLE_RATE * 10, dtype="float32"), config.SAMPLE_RATE)
+    session = main.store.start_session("now", str(wav))
+    main.store.add_line(session, 1.0, "S31", "zh", "夠長的一句話", {}, end_time=4.0)
+
+    original = routes_speakers._embed
+    routes_speakers._embed = lambda samples, rate: np.array([1.0, 0.0], dtype="float32")
+    NAME = "審查改派學聲"
+    try:
+        client.put(f"/api/sessions/{session}/speakers", json={"S31": NAME})
+    finally:
+        routes_speakers._embed = original
+    assert main.store.voiceprint(session, "S31") is not None
+    assert any(n == NAME for n, _ in main.store.known_voiceprints())
+    client.delete(f"/api/speakers/known/{NAME}")
+
+
 def test_naming_one_person_across_codes_learns_every_voice(client: TestClient) -> None:
     """One person split across several codes must teach every variant, not just the last.
 
