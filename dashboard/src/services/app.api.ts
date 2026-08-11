@@ -19,6 +19,8 @@ export interface KnownSpeaker {
   language: string;
   /** Department this person belongs to; '' when unset. Fed to the summary for stance. */
   department: string;
+  /** Playable samples: meetings still on disk plus clips kept from deleted ones. */
+  clips: number;
 }
 
 /** What the recogniser wrote against what was actually said, learned from an edit. */

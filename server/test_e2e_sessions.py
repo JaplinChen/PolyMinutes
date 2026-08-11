@@ -64,6 +64,41 @@ def test_known_voice_can_be_heard_and_renamed(client: TestClient) -> None:
     assert client.delete("/api/speakers/known/Ana%20Lee").json() == []
 
 
+def test_an_identified_voice_survives_its_meetings_deletion(client: TestClient) -> None:
+    """Deleting a meeting removes its wav — but an identified voice must keep a playable sample.
+
+    The clip is harvested into the database at deletion time and only forgetting the voice itself
+    removes it; otherwise "who does this name sound like" becomes unanswerable the day the last
+    meeting they spoke in is cleaned up.
+    """
+    import soundfile as sf
+
+    wav = config.RECORDINGS_DIR / "kept-voice.wav"
+    wav.parent.mkdir(parents=True, exist_ok=True)
+    sf.write(str(wav), np.zeros(config.SAMPLE_RATE * 10, dtype="float32"), config.SAMPLE_RATE)
+
+    session = main.store.start_session("now", str(wav))
+    main.store.add_line(session, 1.0, "S1", "zh", "這段話夠長，聽得出是誰", {}, end_time=6.0)
+    main.store.save_voiceprint(session, "S1", b"\x00" * 8)
+    assert client.put(f"/api/sessions/{session}/speakers", json={"S1": "林保留"}).status_code == 200
+
+    assert client.get("/api/speakers/known/%E6%9E%97%E4%BF%9D%E7%95%99/clip?idx=0").status_code == 200
+    assert client.delete(f"/api/sessions/{session}").status_code == 200
+    assert not wav.exists()
+
+    # The meeting and its wav are gone; the voice still plays, from the harvested clip.
+    clip = client.get("/api/speakers/known/%E6%9E%97%E4%BF%9D%E7%95%99/clip?idx=0")
+    assert clip.status_code == 200 and clip.headers["content-type"] == "audio/wav"
+    sf.read(io.BytesIO(clip.content))  # valid WAV, not an empty blob
+
+    kept = [s for s in client.get("/api/speakers/known").json() if s["name"] == "林保留"]
+    assert kept and kept[0]["clips"] == 1
+
+    # Manual forget is the one thing that removes it.
+    client.delete("/api/speakers/known/%E6%9E%97%E4%BF%9D%E7%95%99")
+    assert client.get("/api/speakers/known/%E6%9E%97%E4%BF%9D%E7%95%99/clip?idx=0").status_code == 404
+
+
 def test_a_line_can_be_reassigned_to_another_speaker(client: TestClient) -> None:
     """The shared-mic collapse puts every line on one speaker; the human splits them back apart.
 

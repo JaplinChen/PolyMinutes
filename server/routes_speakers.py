@@ -57,8 +57,47 @@ def get_known_speakers() -> list[dict]:
     langs = main.store.speaker_languages()
     depts = main.store.speaker_departments()
     return [{"name": name, "sessions": counts.get(name, 0), "language": langs.get(name, ""),
-             "department": depts.get(name, "")}
+             "department": depts.get(name, ""),
+             # How many meetings this voice can still be heard from — live wavs plus clips
+             # harvested from deleted meetings, which is what the Learned page renders players for.
+             "clips": len(main.store.speaker_clip_sources(name))}
             for name, _ in main.store.known_speakers()]
+
+
+def clip_bytes(sample: tuple[str, float, float | None], seconds: float | None = None) -> bytes | None:
+    """The same slice as _clip, as raw WAV bytes — None when the recording is missing.
+
+    Split out so session deletion can harvest a voice's sound before the wav it lives in is
+    removed, without fabricating an HTTP response to unwrap.
+    """
+    wav_path, start, span = sample
+    if seconds is None:
+        seconds = min(main.CLIP_SECONDS, span) if span else main.CLIP_SECONDS
+    wav = config.recording_path(wav_path)
+    if not wav.is_file():
+        return None
+    with sf.SoundFile(wav) as f:
+        f.seek(min(int(start * f.samplerate), max(len(f) - 1, 0)))
+        block = f.read(int(seconds * f.samplerate), dtype="int16")
+        rate = f.samplerate
+    buf = io.BytesIO()
+    sf.write(buf, block, rate, format="WAV", subtype="PCM_16")
+    return buf.getvalue()
+
+
+def harvest_speaker_clips(session_id: int) -> None:
+    """Save each named, still-known voice's sample from this meeting before its wav disappears.
+
+    An identified voice must keep a playable sound even after every meeting it spoke in is deleted;
+    only forgetting the voice itself removes these.
+    """
+    known = {name for name, _ in main.store.known_speakers()}
+    for name in set(main.store.speaker_names(session_id).values()):
+        if name not in known:
+            continue
+        sample = main.store.speaker_sample(name, session_id)
+        if sample and (audio := clip_bytes(sample)):
+            main.store.save_speaker_clip(name, session_id, audio)
 
 
 def _clip(sample: tuple[str, float, float | None] | None, seconds: float | None = None) -> Response:
@@ -73,30 +112,29 @@ def _clip(sample: tuple[str, float, float | None] | None, seconds: float | None 
     """
     if sample is None:
         raise HTTPException(404, "no recording for this voice")
-    wav_path, start, span = sample
-    if seconds is None:
-        seconds = min(main.CLIP_SECONDS, span) if span else main.CLIP_SECONDS
-    wav = config.recording_path(wav_path)
-    if not wav.is_file():
-        raise HTTPException(404, f"recording not found: {wav}")
-
-    with sf.SoundFile(wav) as f:
-        f.seek(min(int(start * f.samplerate), max(len(f) - 1, 0)))
-        block = f.read(int(seconds * f.samplerate), dtype="int16")
-        rate = f.samplerate
-    buf = io.BytesIO()
-    sf.write(buf, block, rate, format="WAV", subtype="PCM_16")
-    return Response(buf.getvalue(), media_type="audio/wav")
+    audio = clip_bytes(sample, seconds)
+    if audio is None:
+        raise HTTPException(404, f"recording not found: {config.recording_path(sample[0])}")
+    return Response(audio, media_type="audio/wav")
 
 
 @router.get("/api/speakers/known/{name}/clip")
 def get_speaker_clip(name: str, idx: int = 0) -> Response:
     """A few seconds of the voice behind the name, so a wrong match is audible rather than guessed.
 
-    `idx` picks which meeting to hear it from, newest first — one clip per meeting the voice
-    was named in.
+    `idx` picks which meeting to hear it from, newest first — meetings still on disk are cut live,
+    deleted ones play the clip harvested when they were removed.
     """
-    return _clip(main.store.speaker_sample(name, idx))
+    sources = main.store.speaker_clip_sources(name)
+    if idx >= len(sources):
+        raise HTTPException(404, "no recording for this voice")
+    session_id, stored = sources[idx]
+    if stored:
+        audio = main.store.stored_clip(name, session_id)
+        if audio is None:
+            raise HTTPException(404, "no recording for this voice")
+        return Response(audio, media_type="audio/wav")
+    return _clip(main.store.speaker_sample(name, session_id))
 
 
 @router.get("/api/sessions/{session_id}/speakers/{code}/clip")
