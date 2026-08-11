@@ -669,6 +669,44 @@ def test_the_auto_refine_pass_leaves_a_human_corrected_line_alone(tmp: Path) -> 
         st.close()
 
 
+def test_vad_cut_fragments_are_merged_and_punctuated(tmp: Path) -> None:
+    """The segment stage joins fragments the VAD cut mid-sentence, then restores punctuation —
+    without marking anything refined, so the correction pass that follows still gets its turn."""
+    from . import postmeeting
+
+    st = store_mod.Store(tmp / "segment-stage.db")
+    try:
+        sid = st.start_session("2026-01-01T09:00:00", "seg.wav")
+        st.add_line(sid, 0.0, "S1", "zh", "我們今天要討論的是", {"en": "what we discuss is"},
+                    end_time=2.0)
+        st.add_line(sid, 2.3, "S1", "zh", "交期的問題", {"en": "the delivery problem"},
+                    end_time=4.0)
+        st.add_line(sid, 9.0, "S2", "zh", "好", {}, end_time=9.5)
+
+        def chat(prompt: str) -> str:
+            assert "我們今天要討論的是交期的問題" in prompt, prompt
+            return "1: 我們今天要討論的是，交期的問題。"
+
+        postmeeting._segment_stage(st, sid, chat)
+
+        rows = st.lines(sid)
+        assert [r["source"] for r in rows] == ["我們今天要討論的是，交期的問題。", "好"], rows
+        assert rows[0]["end_time"] == 4.0, rows[0]
+        assert rows[0]["translations"] == {"en": "what we discuss is the delivery problem"}, rows[0]
+        assert rows[0]["refined"] == 0, "punctuation must not block the refine pass"
+        # Merge and punctuation each changed what the transcript says; the summary must know.
+        assert st.session(sid)["lines_rev"] == 2, st.session(sid)
+
+        # With no LLM the merge still happens — it is pure arithmetic over timestamps.
+        sid2 = st.start_session("2026-01-01T10:00:00", "seg2.wav")
+        st.add_line(sid2, 0.0, "S1", "zh", "沒有模型", {}, end_time=1.0)
+        st.add_line(sid2, 1.2, "S1", "zh", "也要合併", {}, end_time=2.0)
+        postmeeting._segment_stage(st, sid2, None)
+        assert [r["source"] for r in st.lines(sid2)] == ["沒有模型也要合併"]
+    finally:
+        st.close()
+
+
 def test_markdown_export_lists_speakers_in_numeric_order(tmp: Path) -> None:
     """The exported transcript's speaker list is sorted by code. Lexicographic sort put S10 right
     after S1 and ahead of S2 once a meeting had ten or more speakers (the app allows up to S35),
