@@ -218,7 +218,7 @@ export function Learned() {
                   ))}
                 </select>
                 <div className="learned-clips">
-                  {Array.from({ length: Math.max(s.sessions, 1) }, (_, i) => (
+                  {Array.from({ length: Math.max(s.clips, 1) }, (_, i) => (
                     <audio
                       key={i}
                       className="learned-clip"

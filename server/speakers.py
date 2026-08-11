@@ -185,20 +185,21 @@ class SpeakerStore:
     def known_speakers(self) -> list[tuple[str, bytes]]:
         """Every voice the room can name on sight, with the centroid to recognise it by.
 
-        The names come from speaker_name — the live mapping — not from known_speaker's own name
-        column, which remember_speaker only ever inserts into: renaming a speaker updated
-        speaker_name in place but left the old name behind in known_speaker, so the same voice
-        showed up twice on the Learned page. Joining on the current name drops the orphan; the
-        centroid still comes from known_speaker, keyed by whatever name is stored there for it.
-        Ordered by how many meetings named the voice, most-confirmed first.
+        A name qualifies if a live meeting still references it OR a harvested clip is kept for it:
+        the clip is what lets an identified voice outlive the deletion of every meeting it spoke
+        in — before this, deleting the last meeting silently dropped the voice from this page while
+        the recogniser kept using its prints. The reference requirement (rather than reading
+        known_speaker unfiltered) still hides orphans left behind by the era when renames updated
+        speaker_name but not known_speaker. Ordered by how many meetings named the voice.
         """
         with self._lock:
             return [(r["name"], r["centroid"]) for r in self._db.execute(
-                "SELECT DISTINCT sn.name, ks.centroid "
-                "FROM speaker_name sn JOIN known_speaker ks ON ks.name = sn.name "
-                "WHERE sn.name != '' "
-                "GROUP BY sn.name "
-                "ORDER BY COUNT(DISTINCT sn.session_id) DESC")]
+                "SELECT ks.name, ks.centroid FROM known_speaker ks "
+                "WHERE ks.name != '' AND ("
+                "  EXISTS(SELECT 1 FROM speaker_name sn WHERE sn.name = ks.name)"
+                "  OR EXISTS(SELECT 1 FROM known_speaker_clip c WHERE c.name = ks.name)) "
+                "ORDER BY (SELECT COUNT(DISTINCT sn.session_id) FROM speaker_name sn "
+                "          WHERE sn.name = ks.name) DESC")]
 
     def speaker_sessions(self) -> dict[str, int]:
         """How many distinct meetings each *known* voice was named in, counted from the source.
@@ -221,16 +222,31 @@ class SpeakerStore:
                 "JOIN known_speaker ks ON ks.name = sn.name "
                 "WHERE sn.name != '' GROUP BY sn.name")}
 
-    def speaker_sample(self, name: str, idx: int = 0) -> tuple[str, float, float | None] | None:
-        """Where to hear this voice, and how long that utterance lasts.
+    def speaker_clip_sources(self, name: str) -> list[tuple[int, bool]]:
+        """Every meeting this voice can be heard from, newest first, as (session_id, stored).
+
+        Two sources: meetings still on disk (cut from the wav on demand) and clips harvested when
+        a meeting was deleted (stored, in known_speaker_clip). A meeting present in both plays the
+        live cut — the harvest is only there for when the wav is gone.
+        """
+        with self._lock:
+            live = [r["session_id"] for r in self._db.execute(
+                "SELECT DISTINCT sn.session_id AS session_id FROM speaker_name sn "
+                "JOIN line l ON l.session_id=sn.session_id AND l.speaker=sn.code "
+                "WHERE sn.name=?", (name,))]
+            stored = [r["session_id"] for r in self._db.execute(
+                "SELECT session_id FROM known_speaker_clip WHERE name=?", (name,))]
+        merged = {sid: False for sid in live}
+        merged.update({sid: True for sid in stored if sid not in merged})
+        return sorted(merged.items(), key=lambda kv: kv[0], reverse=True)
+
+    def speaker_sample(self, name: str, session_id: int) -> tuple[str, float, float | None] | None:
+        """Where to hear this voice in this meeting, and how long that utterance lasts.
 
         Derived rather than stored — a name is only ever attached on the transcript page, so the
-        transcript already knows which recording and which second to play.
-
-        One sample per meeting the voice was named in: `idx` walks meetings newest-first, so the
-        learned page can play the voice from each meeting it knows, not just the latest. Within a
-        meeting, the longest utterance — "謝謝" identifies nobody — with the MAX aggregate making
-        the bare wav/start/end columns come from that same row (SQLite max-row semantics).
+        transcript already knows which recording and which second to play. The longest utterance —
+        "謝謝" identifies nobody — with the MAX aggregate making the bare wav/start/end columns
+        come from that same row (SQLite max-row semantics).
         """
         with self._lock:
             row = self._db.execute(
@@ -239,11 +255,31 @@ class SpeakerStore:
                 "FROM speaker_name sn "
                 "JOIN line l ON l.session_id=sn.session_id AND l.speaker=sn.code "
                 "JOIN session s ON s.id=sn.session_id "
-                "WHERE sn.name=? GROUP BY sn.session_id "
-                "ORDER BY sn.session_id DESC LIMIT 1 OFFSET ?",
-                (name, idx),
+                "WHERE sn.name=? AND sn.session_id=? GROUP BY sn.session_id",
+                (name, session_id),
             ).fetchone()
         return _sample(row)
+
+    def save_speaker_clip(self, name: str, session_id: int, audio: bytes) -> None:
+        """Keep this voice's sound beyond the meeting it came from. Capped like voiceprints: the
+        oldest clips fall off so a long-lived name does not accumulate audio without bound."""
+        with self._lock:
+            self._db.execute(
+                "INSERT OR REPLACE INTO known_speaker_clip (name, session_id, audio) VALUES (?,?,?)",
+                (name, session_id, audio))
+            self._db.execute(
+                "DELETE FROM known_speaker_clip WHERE name=? AND session_id NOT IN "
+                "(SELECT session_id FROM known_speaker_clip WHERE name=? "
+                "ORDER BY session_id DESC LIMIT ?)",
+                (name, name, KNOWN_PRINT_CAP))
+            self._db.commit()
+
+    def stored_clip(self, name: str, session_id: int) -> bytes | None:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT audio FROM known_speaker_clip WHERE name=? AND session_id=?",
+                (name, session_id)).fetchone()
+        return row["audio"] if row else None
 
     def session_speaker_sample(self, session_id: int, code: str) -> tuple[str, float, float | None] | None:
         """Where to hear S3 in this meeting, before anyone has said who S3 is.
@@ -282,10 +318,12 @@ class SpeakerStore:
             self._db.execute("UPDATE known_speaker SET name=? WHERE name=?", (new, old))
             self._db.execute("UPDATE known_voiceprint SET name=? WHERE name=?", (new, old))
             self._db.execute("UPDATE speaker_name SET name=? WHERE name=?", (new, old))
+            self._db.execute("UPDATE known_speaker_clip SET name=? WHERE name=?", (new, old))
             self._db.commit()
 
     def forget_speaker(self, name: str) -> None:
         with self._lock:
             self._db.execute("DELETE FROM known_speaker WHERE name=?", (name,))
             self._db.execute("DELETE FROM known_voiceprint WHERE name=?", (name,))
+            self._db.execute("DELETE FROM known_speaker_clip WHERE name=?", (name,))
             self._db.commit()

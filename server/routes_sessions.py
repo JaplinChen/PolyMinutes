@@ -13,7 +13,7 @@ import soundfile as sf
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import PlainTextResponse
 
-from . import asr, asr_gpu, config, correct, ingest, jobs, main, translate
+from . import asr, asr_gpu, config, correct, ingest, jobs, main, routes_speakers, translate
 
 log = logging.getLogger("polyminutes")
 
@@ -140,6 +140,9 @@ def delete_session(session_id: int) -> dict:
     if (jobs.state(session_id) or {}).get("state") == "refining":
         raise HTTPException(409, "session is being refined — wait for it to finish")
 
+    # Before the rows and the wav go: an identified voice keeps a playable sample even after every
+    # meeting it spoke in is deleted. Only forgetting the voice removes these.
+    routes_speakers.harvest_speaker_clips(session_id)
     main.store.delete_session(session_id)
     wav = config.recording_path(session["wav_path"])
     try:

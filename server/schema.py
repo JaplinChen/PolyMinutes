@@ -68,6 +68,16 @@ CREATE TABLE IF NOT EXISTS known_speaker (
     language TEXT NOT NULL DEFAULT '',
     department TEXT NOT NULL DEFAULT ''
 );
+-- A voice sample that outlives its meeting. Clips are normally cut from the session's wav on
+-- demand; deleting the meeting deletes that wav, and an identified voice must not lose its sound
+-- with it. Harvested at meeting deletion, removed only when the voice itself is forgotten — so no
+-- FK to session, deliberately.
+CREATE TABLE IF NOT EXISTS known_speaker_clip (
+    name       TEXT NOT NULL,
+    session_id INTEGER NOT NULL,
+    audio      BLOB NOT NULL,
+    PRIMARY KEY (name, session_id)
+);
 -- One person sounds different across the room, the mic and their mood, and a single meeting can
 -- split them across several codes. Naming all of them stores every variant here, not just the
 -- last: matching takes the closest stored print, so more true variants means more of that voice's
