@@ -88,9 +88,13 @@ def _clip(sample: tuple[str, float, float | None] | None, seconds: float | None 
 
 
 @router.get("/api/speakers/known/{name}/clip")
-def get_speaker_clip(name: str) -> Response:
-    """A few seconds of the voice behind the name, so a wrong match is audible rather than guessed."""
-    return _clip(main.store.speaker_sample(name))
+def get_speaker_clip(name: str, idx: int = 0) -> Response:
+    """A few seconds of the voice behind the name, so a wrong match is audible rather than guessed.
+
+    `idx` picks which meeting to hear it from, newest first — one clip per meeting the voice
+    was named in.
+    """
+    return _clip(main.store.speaker_sample(name, idx))
 
 
 @router.get("/api/sessions/{session_id}/speakers/{code}/clip")
