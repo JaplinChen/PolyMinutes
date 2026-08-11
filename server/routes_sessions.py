@@ -22,6 +22,7 @@ router = APIRouter()
 # Longest single utterance a rerun will decode. VAD cuts at 20 s, so anything past this is a row
 # whose end_time is wrong rather than a real utterance, and decoding it would tie up the card.
 RERUN_MAX_SECONDS = 60.0
+RERUN_PAD_SECONDS = 0.5
 
 
 @router.get("/api/sessions")
@@ -286,6 +287,16 @@ def retranslate_line(session_id: int, line_id: int) -> dict:
     return _transcript(session_id, status)
 
 
+def _mostly_glossary(text: str, terms: list) -> bool:
+    """True when stripping every glossary term leaves less than a third of the text."""
+    stripped = text
+    for term in terms:
+        stripped = stripped.replace(term.source, "")
+    kept = len(stripped.replace(" ", ""))
+    total = len(text.replace(" ", ""))
+    return total > 0 and kept / total < 1 / 3
+
+
 @router.post("/api/sessions/{session_id}/lines/{line_id}/rerun")
 def rerun_line(session_id: int, line_id: int) -> dict:
     """Decode and translate one line again from the recording.
@@ -306,9 +317,12 @@ def rerun_line(session_id: int, line_id: int) -> dict:
     if not wav.is_file():
         raise HTTPException(404, f"recording not found: {wav}")
 
-    start = float(line["start"])
+    # Half a second of padding on both sides: the live VAD cuts on silence, which clips the
+    # opening and closing consonants, and a one-second slice with both ends shaved is the
+    # main reason a re-run comes back empty.
+    start = max(float(line["start"]) - RERUN_PAD_SECONDS, 0.0)
     end = line["end_time"] if line["end_time"] is not None else start + RERUN_MAX_SECONDS
-    seconds = min(max(float(end) - start, 0.0), RERUN_MAX_SECONDS)
+    seconds = min(max(float(end) + RERUN_PAD_SECONDS - start, 0.0), RERUN_MAX_SECONDS)
     if seconds <= 0:
         raise HTTPException(400, "line has no duration to re-run")
 
@@ -330,6 +344,15 @@ def rerun_line(session_id: int, line_id: int) -> dict:
                        or asr.Transcriber(model_dir=main.postprocess.best_model(), quantized=False,
                                           languages=main.state["cfg"].languages))
         text, used = transcriber.transcribe(samples, line["lang"] or "")
+        if not text and line["lang"]:
+            # A forced language on a mumbled clip can decode to nothing; one auto-detect
+            # retry before declaring the line unrecognisable.
+            text, used = transcriber.transcribe(samples, "")
+        # Near-silent audio makes the decoder hallucinate the glossary hotwords back at
+        # us — from either attempt — so a result that is mostly glossary terms is
+        # discarded rather than saved as if someone had said it.
+        if text and _mostly_glossary(text, main.store.glossary()):
+            text, used = "", ""
 
     if not text:
         main.store.replace_line(line_id, line["source"], line["lang"], {}, "asr_failed")
