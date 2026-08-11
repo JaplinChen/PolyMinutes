@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
-import { Download, FileText, RefreshCw, Search, Upload } from 'lucide-react';
+import { Download, FileText, RefreshCw, Search, Trash2, Upload } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { PageSkeleton } from '../components/PageSkeleton';
 import { TranscriptRow } from '../components/sessions/TranscriptRow';
@@ -320,6 +320,24 @@ export function Sessions() {
     }
   };
 
+  // Same confirm-first shape as reprocess: no undo, and the recording goes with the rows.
+  const deleteSession = async () => {
+    if (selected === null || locked) return;
+    if (!window.confirm(t('sessions.deleteConfirm'))) return;
+    setBusy(true);
+    try {
+      await appApi.deleteSession(selected);
+      const list = await appApi.sessions();
+      setSessions(list);
+      setSelected(list.length ? list[0].id : null);
+      toast.success(t('sessions.deleteDone'));
+    } catch (err) {
+      fail(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   // Correcting a line is a judgement about whether the text matches what was said, so the audio has
   // to be reachable from the line. One player for the whole transcript rather than one per row:
   // clicking a second line replaces what is playing, which is also the behaviour you want.
@@ -500,6 +518,8 @@ export function Sessions() {
 
       {hasSessions && (
         <section className="etable-panel">
+          {/* The panel is a stretch column, so unwrapped the button would fill its width. */}
+          <div className="sess-picker-row">
           <select className="sess-select" aria-label={t('sessions.pick')} value={selected ?? ''} onChange={e => setSelected(Number(e.target.value))}>
             {sessions.map(s => (
               <option key={s.id} value={s.id}>
@@ -508,6 +528,17 @@ export function Sessions() {
               </option>
             ))}
           </select>
+          <button
+            type="button"
+            className="sess-delete"
+            disabled={busy || locked || selected === null}
+            title={locked ? t('sessions.refiningHint') : t('sessions.deleteHint')}
+            onClick={deleteSession}
+          >
+            <Trash2 size={13} />
+            {t('sessions.delete')}
+          </button>
+          </div>
         </section>
       )}
 

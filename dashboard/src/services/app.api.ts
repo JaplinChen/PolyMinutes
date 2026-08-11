@@ -235,6 +235,9 @@ export const appApi = {
   sessionSummary: (id: number) => request<MeetingSummary>(`/sessions/${id}/summary`),
   // 409 while a job runs or the meeting is recording; 429 while fresh-and-unchanged.
   summarizeSession: (id: number) => request<MeetingSummary>(`/sessions/${id}/summarize`, { method: 'POST' }),
+  // 409 while the meeting is recording or a refine pass is running.
+  deleteSession: (id: number) =>
+    request<{ deleted: number }>(`/sessions/${id}`, { method: 'DELETE' }),
   reprocess: (id: number) =>
     request<{ session: number; state: RefineState; error: string }>(`/sessions/${id}/reprocess`, {
       method: 'POST',
