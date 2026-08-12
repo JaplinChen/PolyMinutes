@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
-import { Download, FileText, RefreshCw, Search, Trash2, Upload } from 'lucide-react';
+import { Download, FileText, Link as LinkIcon, RefreshCw, Search, Trash2, Upload } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { PageSkeleton } from '../components/PageSkeleton';
 import { TranscriptRow } from '../components/sessions/TranscriptRow';
@@ -44,6 +44,7 @@ export function Sessions() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<{ id: number; text: string } | null>(null);
   const [importing, setImporting] = useState(false);
+  const [importUrl, setImportUrl] = useState('');
   const [rerunning, setRerunning] = useState<number | null>(null);
   const [tab, setTab] = useState<Tab>('transcript');
   const [playing, setPlaying] = useState<number | null>(null);
@@ -292,6 +293,24 @@ export function Sessions() {
     setImporting(true);
     try {
       const added = await appApi.importRecording(file);
+      setSessions(await appApi.sessions());
+      setSelected(added.id);
+    } catch (err) {
+      fail(err);
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  // Same landing as a file: the session exists at once and the refine chip tracks the download
+  // and transcription, so this only has to hand over the URL and select what came back.
+  const importFromUrl = async () => {
+    const url = importUrl.trim();
+    if (!url || importing) return;
+    setImporting(true);
+    try {
+      const added = await appApi.importUrl(url);
+      setImportUrl('');
       setSessions(await appApi.sessions());
       setSelected(added.id);
     } catch (err) {
@@ -581,6 +600,20 @@ export function Sessions() {
               }}
             />
           </label>
+          <div className="sess-import-url">
+            <input
+              type="url"
+              value={importUrl}
+              placeholder={t('sessions.importUrlPlaceholder')}
+              disabled={importing}
+              onChange={e => setImportUrl(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') importFromUrl(); }}
+            />
+            <button type="button" disabled={importing || !importUrl.trim()} onClick={importFromUrl}>
+              <LinkIcon size={16} />
+              {t('sessions.importUrlGo')}
+            </button>
+          </div>
           {!hasSessions && (
             <div className="sess-empty">
               <FileText size={32} strokeWidth={1} />

@@ -389,6 +389,53 @@
   display: none;
 }
 
+/* One row: URL field grows, the fetch button keeps its size. Same box treatment as the file
+   picker above so the two import paths read as siblings. */
+.sess-page .sess-import-url {
+  display: flex;
+  gap: 8px;
+  max-width: 560px;
+  margin-top: 12px;
+}
+
+.sess-page .sess-import-url input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: inherit;
+  font: inherit;
+}
+
+.sess-page .sess-import-url input:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.sess-page .sess-import-url button {
+  flex: 0 0 auto;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 200ms ease, background 200ms ease;
+}
+
+.sess-page .sess-import-url button:hover:enabled {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.sess-page .sess-import-url button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
 /* Always present rather than revealed on hover: the transcript is read on a laptop by someone
    checking 943 lines, and a control that appears only under the pointer is one they have to hunt
    for on every row. Muted until hovered so it does not compete with the text. */
