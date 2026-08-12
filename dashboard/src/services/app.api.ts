@@ -137,6 +137,8 @@ export interface TranscriptLine {
   speaker: string;
   lang: string;
   source: string;
+  /** Pre-edit text kept from the first manual correction, or null when never hand-edited. */
+  orig_source: string | null;
   refined: number;
   status: LineStatus;
   end_time: number | null;

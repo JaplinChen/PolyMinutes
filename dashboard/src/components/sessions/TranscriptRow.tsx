@@ -3,6 +3,54 @@ import { useTranslation } from 'react-i18next';
 import { ChevronDown, ChevronRight, Languages, Play, RotateCw, Square } from 'lucide-react';
 import type { TranscriptLine } from '../../services/app.api';
 
+type DiffSeg = { kind: 'same' | 'del' | 'add'; text: string };
+
+// Char-level diff for showing a manual edit in place: struck-through original, highlighted
+// replacement. Character granularity because the transcript is mostly Chinese, where word
+// boundaries are not spaces. ponytail: O(n·m) LCS over the changed middle — a line is one
+// utterance, a few hundred chars at most.
+function charDiff(a: string, b: string): DiffSeg[] {
+  let p = 0;
+  while (p < a.length && p < b.length && a[p] === b[p]) p++;
+  let s = 0;
+  while (s < a.length - p && s < b.length - p && a[a.length - 1 - s] === b[b.length - 1 - s]) s++;
+  const ca = a.slice(p, a.length - s);
+  const cb = b.slice(p, b.length - s);
+  const n = ca.length;
+  const m = cb.length;
+  const dp: number[][] = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+  for (let i = n - 1; i >= 0; i--)
+    for (let j = m - 1; j >= 0; j--)
+      dp[i][j] = ca[i] === cb[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const segs: DiffSeg[] = [];
+  const push = (kind: DiffSeg['kind'], text: string) => {
+    if (!text) return;
+    const last = segs[segs.length - 1];
+    if (last && last.kind === kind) last.text += text;
+    else segs.push({ kind, text });
+  };
+  push('same', a.slice(0, p));
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (ca[i] === cb[j]) {
+      push('same', ca[i]);
+      i++;
+      j++;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      push('del', ca[i]);
+      i++;
+    } else {
+      push('add', cb[j]);
+      j++;
+    }
+  }
+  push('del', ca.slice(i));
+  push('add', cb.slice(j));
+  if (s) push('same', a.slice(a.length - s));
+  return segs;
+}
+
 const clock = (seconds: number) => {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
@@ -119,7 +167,16 @@ function Row({ line, speakerOptions, newSpeakerCode, langs, locked, draftText, i
           >
             {/* A failed re-run clears the text; the dash keeps the paragraph clickable so the
                 correct words can still be typed in by hand. */}
-            {line.source || '—'}
+            {line.orig_source && line.orig_source !== line.source
+              ? charDiff(line.orig_source, line.source).map((seg, idx) =>
+                  seg.kind === 'same' ? (
+                    <span key={idx}>{seg.text}</span>
+                  ) : seg.kind === 'del' ? (
+                    <del key={idx} className="sess-diff-del">{seg.text}</del>
+                  ) : (
+                    <mark key={idx} className="sess-diff-add">{seg.text}</mark>
+                  ))
+              : line.source || '—'}
           </p>
         )}
         {/* Icon-only and out of the flow: labelled buttons pushed every translation down a line and
