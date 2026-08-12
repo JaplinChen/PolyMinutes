@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS line (
     speaker    TEXT NOT NULL,
     lang       TEXT NOT NULL,
     source     TEXT NOT NULL,
+    orig_source TEXT,
     refined    INTEGER NOT NULL DEFAULT 0,
     status     TEXT NOT NULL DEFAULT 'ok',
     end_time   REAL
@@ -114,6 +115,9 @@ LINE_COLUMNS = (
     # No NOT NULL: rows written before this column existed have no end to backfill, and guessing
     # one would be worse than admitting it is unknown.
     ("end_time", "ALTER TABLE line ADD COLUMN end_time REAL"),
+    # What the line said before a human first corrected it, kept so the transcript can show the
+    # edit as a strike-through/highlight diff. NULL means never hand-edited.
+    ("orig_source", "ALTER TABLE line ADD COLUMN orig_source TEXT"),
 )
 
 

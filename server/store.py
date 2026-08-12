@@ -256,8 +256,17 @@ class Store(SpeakerStore):
         """
         with self._lock:
             try:
-                self._db.execute("UPDATE line SET source=?, lang=?, status=? WHERE id=?",
-                                 (source, lang, status, line_id))
+                # A human edit (refined=True) keeps the first pre-edit text so the transcript can
+                # show what changed; a re-run that produced different words replaces the human's
+                # edit entirely, so its trace would be a lie and is dropped. A same-text call
+                # (retranslate) leaves the trace standing.
+                self._db.execute(
+                    "UPDATE line SET orig_source = CASE"
+                    " WHEN ? THEN COALESCE(orig_source, source)"
+                    " WHEN source = ? THEN orig_source"
+                    " ELSE NULL END,"
+                    " source=?, lang=?, status=? WHERE id=?",
+                    (1 if refined else 0, source, source, lang, status, line_id))
                 if refined:
                     self._db.execute("UPDATE line SET refined=1 WHERE id=?", (line_id,))
                 self._db.execute("DELETE FROM line_translation WHERE line_id=?", (line_id,))

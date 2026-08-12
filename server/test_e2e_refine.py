@@ -262,6 +262,34 @@ def test_every_edit_path_moves_the_revision(tmp: Path) -> None:
         st.close()
 
 
+def test_a_hand_edit_keeps_its_pre_edit_text_and_a_rerun_drops_it(tmp: Path) -> None:
+    """orig_source is the diff the transcript renders: set once by the first human edit,
+    kept across further edits and retranslation, dropped when a re-run replaces the words."""
+    st = store_mod.Store(tmp / "trace.db")
+    try:
+        sid = st.start_session("2026-01-01T09:00:00", "r.wav")
+        st.add_line(sid, 0.0, "S1", "zh", "原始辨識", {})
+        line_id = st.lines(sid)[0]["id"]
+        assert st.lines(sid)[0]["orig_source"] is None
+
+        st.replace_line(line_id, "人工修正一", "zh", {}, "ok", refined=True)
+        assert st.lines(sid)[0]["orig_source"] == "原始辨識"
+
+        # A second edit keeps the first original, not the intermediate text.
+        st.replace_line(line_id, "人工修正二", "zh", {}, "ok", refined=True)
+        assert st.lines(sid)[0]["orig_source"] == "原始辨識"
+
+        # Retranslate re-writes the line with the same words; the trace stands.
+        st.replace_line(line_id, "人工修正二", "zh", {}, "ok")
+        assert st.lines(sid)[0]["orig_source"] == "原始辨識"
+
+        # A re-run that decoded different words replaces the human's edit; its trace would lie.
+        st.replace_line(line_id, "重跑結果", "zh", {}, "ok")
+        assert st.lines(sid)[0]["orig_source"] is None
+    finally:
+        st.close()
+
+
 def test_an_empty_retranscription_does_not_wipe_the_existing_transcript(tmp: Path) -> None:
     """A re-transcription that decodes nothing must leave the old transcript standing.
 

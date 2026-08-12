@@ -281,6 +281,21 @@
   font-size: 0.95rem;
 }
 
+/* A hand-edited line shows its correction in place: the misheard characters struck through,
+   their replacements on a yellow highlight in red. */
+.sess-page .sess-diff-del {
+  text-decoration: line-through;
+  color: var(--text-secondary);
+  opacity: 0.6;
+}
+
+.sess-page .sess-diff-add {
+  background: color-mix(in srgb, var(--warning) 25%, transparent);
+  color: var(--error-text);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
 .sess-page .sess-body p:last-child {
   margin-bottom: 0;
 }
