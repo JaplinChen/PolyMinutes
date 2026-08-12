@@ -118,6 +118,11 @@ def clip_bytes(sample: tuple[str, float, float | None], seconds: float | None = 
     wav_path, start, span = sample
     if seconds is None:
         seconds = min(main.CLIP_SECONDS, span) if span else main.CLIP_SECONDS
+        if span and span > seconds:
+            # The middle of the utterance, not its head: when the segmenter missed a turn, the
+            # other voice sits at the edges — the head is the previous speaker finishing. A line
+            # clip passes explicit seconds and is untouched; hearing the whole line is its point.
+            start += (span - seconds) / 2
     wav = config.recording_path(wav_path)
     if not wav.is_file():
         return None

@@ -26,6 +26,18 @@ KNOWN_PRINT_CAP = 8
 # of a person's real variants rather than the same utterance saved over and over.
 KNOWN_DUP_THRESHOLD = 0.85
 
+# The band a naming clip wants: long enough to identify a voice, short enough that a missed
+# speaker turn is unlikely to be inside it. Sampling the *longest* utterance — the previous rule —
+# adversely selected the dirtiest line: a line is long exactly when the segmenter missed a turn
+# inside it, so the sample opened with somebody else's voice. Under three seconds only as a last
+# resort ("謝謝" identifies nobody); otherwise the closest to eight; text length breaks ties for
+# transcripts written before end_time existed.
+SAMPLE_MIN_SECONDS = 3.0
+SAMPLE_IDEAL_SECONDS = 8.0
+_SAMPLE_ORDER = ("ORDER BY (COALESCE(l.end_time - l.start, 0) < "
+                 f"{SAMPLE_MIN_SECONDS}), ABS(COALESCE(l.end_time - l.start, 0) - "
+                 f"{SAMPLE_IDEAL_SECONDS}), LENGTH(l.source) DESC")
+
 
 def _cosine(a: np.ndarray, b: np.ndarray) -> float:
     denom = float(np.linalg.norm(a) * np.linalg.norm(b))
@@ -244,18 +256,16 @@ class SpeakerStore:
         """Where to hear this voice in this meeting, and how long that utterance lasts.
 
         Derived rather than stored — a name is only ever attached on the transcript page, so the
-        transcript already knows which recording and which second to play. The longest utterance —
-        "謝謝" identifies nobody — with the MAX aggregate making the bare wav/start/end columns
-        come from that same row (SQLite max-row semantics).
+        transcript already knows which recording and which second to play. Picked by
+        `_SAMPLE_ORDER`, not by length: see the note on it.
         """
         with self._lock:
             row = self._db.execute(
-                "SELECT s.wav_path AS wav, l.start AS start, l.end_time AS end_time, "
-                "MAX(COALESCE(l.end_time - l.start, 0)) "
+                "SELECT s.wav_path AS wav, l.start AS start, l.end_time AS end_time "
                 "FROM speaker_name sn "
                 "JOIN line l ON l.session_id=sn.session_id AND l.speaker=sn.code "
                 "JOIN session s ON s.id=sn.session_id "
-                "WHERE sn.name=? AND sn.session_id=? GROUP BY sn.session_id",
+                f"WHERE sn.name=? AND sn.session_id=? {_SAMPLE_ORDER} LIMIT 1",
                 (name, session_id),
             ).fetchone()
         return _sample(row)
@@ -288,15 +298,13 @@ class SpeakerStore:
         name — which is exactly the voice nobody needs to hear. This one is keyed on the diariser's
         own code, so it works while the field beside it is still empty.
 
-        The longest utterance, not the first: "謝謝" identifies nobody, and picking by length costs
-        an ORDER BY. Falls back to text length where the recording has no end time.
+        Picked by `_SAMPLE_ORDER`, not by length: see the note on it.
         """
         with self._lock:
             row = self._db.execute(
                 "SELECT s.wav_path AS wav, l.start AS start, l.end_time AS end_time FROM line l "
                 "JOIN session s ON s.id = l.session_id "
-                "WHERE l.session_id=? AND l.speaker=? "
-                "ORDER BY COALESCE(l.end_time - l.start, 0) DESC, LENGTH(l.source) DESC LIMIT 1",
+                f"WHERE l.session_id=? AND l.speaker=? {_SAMPLE_ORDER} LIMIT 1",
                 (session_id, code),
             ).fetchone()
         return _sample(row)
