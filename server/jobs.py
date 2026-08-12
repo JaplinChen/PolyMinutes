@@ -183,8 +183,8 @@ def release_gpu() -> None:
 def borrow_gpu(timeout: float = 900.0):
     """Wait your turn for the card. For work that is not a live meeting and must not preempt one.
 
-    An import runs the same post-meeting pass, but nothing about it is time-critical, so it queues
-    behind whatever holds the card instead of asking it to stand down.
+    Every scheduled pass takes the card through here, around its decode alone; a background pass
+    queues behind whatever holds the card instead of asking it to stand down.
     """
     if not _gpu.acquire(timeout=timeout):
         raise TimeoutError("the GPU is busy")
@@ -192,22 +192,6 @@ def borrow_gpu(timeout: float = 900.0):
         yield
     finally:
         release_gpu()
-
-
-@contextmanager
-def one_pass(timeout: float = 900.0):
-    """Hold the offline-pass slot for work that does not go through `schedule`.
-
-    An import calls `rewrite_session` straight from the request. Scheduled passes take this slot
-    in their worker; an import has to take it here, or an import and a reprocess overlap and the
-    machine holds two recordings and two sets of segmentation workers at once.
-    """
-    if not _pass.acquire(timeout=timeout):
-        raise TimeoutError("another recording is still being processed")
-    try:
-        yield
-    finally:
-        _pass.release()
 
 
 def cancel_all(wait: float = 0.0) -> None:

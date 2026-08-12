@@ -166,8 +166,10 @@ export const appApi = {
 
   sessions: async () => (await request<RawSessionSummary[]>('/sessions')).map(withRefine),
   // Sent as the raw body rather than a form: the server needs the bytes, not a field name.
+  // Returns as soon as the session exists; the refine pass runs in the background and shows on the
+  // session's refine state.
   importRecording: (file: File) =>
-    request<{ id: number; lines: number }>(`/sessions/import?filename=${encodeURIComponent(file.name)}`, {
+    request<{ id: number; state: string }>(`/sessions/import?filename=${encodeURIComponent(file.name)}`, {
       method: 'POST',
       body: file,
       headers: { 'Content-Type': 'application/octet-stream' },

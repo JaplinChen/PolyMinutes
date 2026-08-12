@@ -14,7 +14,7 @@ import numpy as np
 from fastapi.testclient import TestClient
 
 from . import config, jobs, main
-from .e2e_support import seed_session
+from .e2e_support import seed_session, wait_for
 
 
 def test_recording_lifecycle(client: TestClient) -> None:
@@ -189,6 +189,10 @@ def test_importing_a_recording_makes_it_a_session(client: TestClient) -> None:
     r = client.post("/api/sessions/import?filename=meeting.m4a", content=src.read_bytes())
     assert r.status_code == 200, r.text
     session_id = r.json()["id"]
+    # The response comes back before the pass: the decode is queued, not run inside the request.
+    assert r.json()["state"] == "refining", r.text
+    assert wait_for(lambda: session_id in main.postprocess.calls), "import never queued its pass"
+    assert wait_for(lambda: (jobs.state(session_id) or {}).get("state") == "refined")
 
     listed = client.get("/api/sessions").json()
     assert len(listed) == before + 1
@@ -287,6 +291,8 @@ def test_import_decodes_off_the_event_loop(client: TestClient) -> None:
     assert r.status_code == 200, r.text
     assert saw.get("on_loop") is False, "import decode ran on the event loop thread"
 
+    # Let the queued pass finish before deleting the wav from under it.
+    wait_for(lambda: (jobs.state(r.json()["id"]) or {}).get("state") == "refined")
     # Shared RECORDINGS_DIR: leave no import-*.wav behind, or the next import test miscounts.
     imported = next(s for s in client.get("/api/sessions").json() if s["id"] == r.json()["id"])
     Path(imported["wav_path"]).unlink(missing_ok=True)

@@ -424,22 +424,13 @@ async def import_recording(request: Request, filename: str = "upload") -> dict:
     now = time.strftime("%Y-%m-%dT%H:%M:%S")
     session_id = main.store.start_session(now, str(wav))
     main.store.end_session(session_id, now)
-    def _decode():
-        # ponytail: synchronous decode — a long recording holds the request open. Worth a job queue
-        # only once someone imports something long enough to time out. It still queues for the card,
-        # so an import during a meeting waits rather than loading a second model beside the live one
-        # — but only for the decode, which is the only stage that wants it.
-        with jobs.one_pass():
-            main.postprocess.rewrite_session(main.store, session_id, wav, main.state["cfg"],
-                                             main._make_translator(), gpu=jobs.borrow_gpu)
-
-    try:
-        # In a thread: one_pass() blocks on the GPU gate and the decode is heavy CPU — either one
-        # on the event loop stalls every other request until the import finishes.
-        await asyncio.to_thread(_decode)
-    except (FileNotFoundError, ValueError) as exc:
-        raise HTTPException(400, str(exc)) from exc
-    return {"id": session_id, "lines": len(main.store.lines(session_id))}
+    # Queued like a meeting that just ended, not decoded inline: a long recording used to hold this
+    # request open for the whole pass — past most proxies' timeout — with nothing on screen saying
+    # why. Through `_refine` the response returns as soon as the session exists, the dashboard's
+    # refine chip tracks the pass, and an import gets the same LLM correction and summary stages a
+    # recorded meeting does instead of stopping at the rewrite.
+    main._refine(session_id, wav)
+    return {"id": session_id, **(jobs.state(session_id) or {})}
 
 
 @router.get("/api/sessions/{session_id}/markdown")

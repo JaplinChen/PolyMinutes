@@ -79,13 +79,12 @@ def _make_translator() -> translate.Translator | None:
 
 
 def _refine(session_id: int, wav: Path) -> None:
-    """Queue the post-meeting pass for a session that just ended.
+    """Queue the post-meeting pass for a session that just ended — or was just imported.
 
-    This used to be something a person had to remember. An imported recording was refined on the
-    way in (see `import_recording`) while a meeting the room actually captured was not, so the same
-    audio produced a better transcript when uploaded through the dashboard than when recorded in
-    the room it was built for. Whether a transcript got the large model, offline clustering and the
-    per-speaker language pass came down to whether anyone clicked a button.
+    This used to be something a person had to remember: whether a transcript got the large model,
+    offline clustering and the per-speaker language pass came down to whether anyone clicked a
+    button. Now every way a session comes to exist — a meeting ending, a file imported — funnels
+    through here, so an upload and a room capture of the same audio produce the same transcript.
     """
     def run(cancel: threading.Event) -> None:
         postprocess.rewrite_session(store, session_id, wav, state["cfg"], _make_translator(),
