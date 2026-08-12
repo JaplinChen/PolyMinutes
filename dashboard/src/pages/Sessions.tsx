@@ -7,7 +7,7 @@ import { PageSkeleton } from '../components/PageSkeleton';
 import { TranscriptRow } from '../components/sessions/TranscriptRow';
 import { useToast } from '../components/Toast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
-import { appApi, type MeetingSummary, type RefineState, type SessionSummary, type TranscriptLine } from '../services/app.api';
+import { appApi, type MeetingSummary, type RefineJob, type RefineStage, type RefineState, type SessionSummary, type TranscriptLine } from '../services/app.api';
 import { API_BASE_URL, NO_SUCH_ENDPOINT } from '../services/http';
 import { editingLocked } from '../services/sessionSummary';
 import './Sessions.css';
@@ -51,6 +51,9 @@ export function Sessions() {
   const [query, setQuery] = useState('');
   const [busy, setBusy] = useState(false);
   const [summary, setSummary] = useState<MeetingSummary | null>(null);
+  // The per-session probe: stage progress while the pass runs, skipped count once it has finished.
+  // Kept apart from the sessions list, which carries state but not the counters.
+  const [job, setJob] = useState<RefineJob | null>(null);
   const [sumLang, setSumLang] = useState<string | null>(null);
   const [summarizing, setSummarizing] = useState(false);
   const [reference, setReference] = useState('');
@@ -128,6 +131,17 @@ export function Sessions() {
     appApi.sessionSummary(id).then(setSummary).catch(() => setSummary(null));
   }, []);
 
+  // Silent on failure: an older backend without the progress fields still answers, and one without
+  // the route at all should degrade to the bare state chip rather than a toast per poll.
+  const loadJob = useCallback((id: number) => {
+    appApi.refineJob(id).then(setJob).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    setJob(null);
+    if (selected !== null) loadJob(selected);
+  }, [selected, loadJob]);
+
   useEffect(() => {
     if (selected !== null) loadLines(selected);
   }, [selected, loadLines]);
@@ -182,6 +196,8 @@ export function Sessions() {
         // Both a refine pass and a summarize job end by writing the summary; either way the card is
         // now out of date, and the summary itself must be re-fetched, not only the session list.
         loadSummary(selected);
+        // The finished job carries the skipped count the warning banner reads.
+        loadJob(selected);
       }
       return;
     }
@@ -198,10 +214,14 @@ export function Sessions() {
       appApi.sessions().then(setSessions).catch(() => {});
       // The summary job's completion shows on the summary, not the session, so poll it too — this
       // is what lets a summarize-only run be noticed at all.
-      if (selected !== null) loadSummary(selected);
+      if (selected !== null) {
+        loadSummary(selected);
+        // Same timer, not a second poll: stage and done/total ride along with each tick.
+        loadJob(selected);
+      }
     }, REFINE_POLL_MS);
     return () => window.clearInterval(timer);
-  }, [jobRunning, selected, loadLines, loadSummary, toast, t]);
+  }, [jobRunning, selected, loadLines, loadSummary, loadJob, toast, t]);
 
   // Regenerates the summary alone — no ASR, no GPU. The job registry the refine poll watches
   // dedups it, so refreshing the sessions list is what starts the poll that notices it finish.
@@ -517,6 +537,24 @@ export function Sessions() {
       ? sumLang
       : sumLangs.find(l => l.split('-')[0].toLowerCase() === uiBase) ?? sumLangs[0];
   const sumContent = activeSumLang ? summary?.summary?.[activeSumLang] : undefined;
+  // Stage from the probe when it has answered, else the session list's copy — the list refreshes on
+  // the same tick, so a backend without the probe still names the stage where it can.
+  const jobStage: RefineStage | undefined = job?.stage ?? current?.refine.stage;
+  const jobDone = job?.done ?? 0;
+  const jobTotal = job?.total ?? 0;
+  const jobSkipped = job?.skipped ?? 0;
+  const stageLabel: Record<RefineStage, string> = {
+    rewrite: t('sessions.stageRewrite'),
+    segment: t('sessions.stageSegment'),
+    refine: t('sessions.stageRefine'),
+    summarize: t('sessions.stageSummarize'),
+  };
+  // segment/refine walk the transcript in order, so `done` is a watermark: rows past it have not
+  // been touched yet. Ids rather than indexes because the visible list may be search-filtered.
+  const pendingIds =
+    refine === 'refining' && jobTotal > 0 && (jobStage === 'segment' || jobStage === 'refine')
+      ? new Set(lines.slice(jobDone).map(l => l.id))
+      : null;
   const refineLabel: Partial<Record<RefineState, string>> = {
     refining: t('sessions.refining'),
     refined: t('sessions.refined'),
@@ -748,6 +786,33 @@ export function Sessions() {
             />
           </div>
           {locked && <p className="sess-hint">{t('sessions.refiningHint')}</p>}
+          {refine === 'refining' && (
+            <div className="sess-refine-progress" role="status">
+              <span>{jobStage ? stageLabel[jobStage] : t('sessions.refining')}</span>
+              {jobTotal > 0 && (
+                <span className="sess-refine-count">
+                  {t('sessions.refineProgress', { done: jobDone, total: jobTotal })}
+                </span>
+              )}
+            </div>
+          )}
+          {refine === 'refined' && jobSkipped > 0 && (
+            <div className="sess-refine-skipped" role="status">
+              <span>{t('sessions.refineSkipped', { count: jobSkipped })}</span>
+              {/* The same run as the header's reprocess button — this is a shortcut to it placed
+                  where the problem is stated, not a second kind of rerun. */}
+              <button
+                type="button"
+                className="sess-reprocess"
+                disabled={busy || locked || !hasRecording}
+                title={hasRecording ? t('sessions.reprocessHint') : t('sessions.noRecording')}
+                onClick={reprocessSession}
+              >
+                <RefreshCw size={13} />
+                {t('sessions.reprocess')}
+              </button>
+            </div>
+          )}
           {refine === 'failed' && refineError && (
             <p className="sess-refine-error">{t('sessions.refineFailedReason', { reason: refineError })}</p>
           )}
@@ -766,6 +831,7 @@ export function Sessions() {
                 newSpeakerCode={newSpeakerCode}
                 langs={langs}
                 locked={locked}
+                pending={pendingIds?.has(line.id) ?? false}
                 draftText={editing?.id === line.id ? editing.text : null}
                 isRerunning={rerunning === line.id}
                 rerunBlocked={rerunning !== null}

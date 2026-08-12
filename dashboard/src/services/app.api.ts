@@ -74,6 +74,19 @@ export type RefineState = 'idle' | 'refining' | 'refined' | 'failed' | 'cancelle
 /** Which part of the post-meeting pass is running; absent when there has not been one. */
 export type RefineStage = 'rewrite' | 'segment' | 'refine' | 'summarize';
 
+/** The per-session job probe. Progress fields arrive with a newer backend; older ones omit them. */
+export interface RefineJob {
+  session: number;
+  state: RefineState;
+  stage?: RefineStage;
+  error: string;
+  /** Lines the running stage has finished with; 0/undefined when the backend does not report it. */
+  done?: number;
+  total?: number;
+  /** Lines the finished pass left unpunctuated/unrefined. */
+  skipped?: number;
+}
+
 export interface SessionSummary {
   id: number;
   started: string;
@@ -252,6 +265,9 @@ export const appApi = {
   // Re-derives the whole transcript from the recording with the largest model. Every line is
   // replaced, so anything corrected by hand since the meeting is overwritten.
   sessionSummary: (id: number) => request<MeetingSummary>(`/sessions/${id}/summary`),
+  // Per-session job probe: where the pass is (stage), how far it got (done/total) and what the
+  // last finished pass left undone (skipped). Fields missing on an older backend read as 0.
+  refineJob: (id: number) => request<RefineJob>(`/sessions/${id}/refine`),
   // 409 while a job runs or the meeting is recording; 429 while fresh-and-unchanged.
   summarizeSession: (id: number) => request<MeetingSummary>(`/sessions/${id}/summarize`, { method: 'POST' }),
   // 409 while the meeting is recording or a refine pass is running.

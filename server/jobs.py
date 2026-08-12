@@ -46,6 +46,9 @@ class Job:
     # the stage is extra detail for a page that wants to say "summarizing" instead of "refining".
     stage: str = "rewrite"  # rewrite | refine | summarize
     error: str = ""
+    done: int = 0
+    total: int = 0
+    skipped: int = 0
     cancel: threading.Event = field(default_factory=threading.Event)
     thread: threading.Thread | None = None
 
@@ -54,16 +57,33 @@ _jobs: dict[int, Job] = {}
 _lock = threading.Lock()
 
 
+def _view(job: Job) -> dict:
+    return {"state": job.state, "stage": job.stage, "error": job.error,
+            "done": job.done, "total": job.total, "skipped": job.skipped}
+
+
 def state(session_id: int) -> dict | None:
     with _lock:
         job = _jobs.get(session_id)
-        return {"state": job.state, "stage": job.stage, "error": job.error} if job else None
+        return _view(job) if job else None
 
 
 def states() -> dict[int, dict]:
     with _lock:
-        return {sid: {"state": j.state, "stage": j.stage, "error": j.error}
-                for sid, j in _jobs.items()}
+        return {sid: _view(j) for sid, j in _jobs.items()}
+
+
+def set_progress(session_id: int, done: int | None = None, total: int | None = None,
+                 skipped_add: int = 0) -> None:
+    with _lock:
+        job = _jobs.get(session_id)
+        if job is None:
+            return
+        if done is not None:
+            job.done = done
+        if total is not None:
+            job.total = total
+        job.skipped += skipped_add
 
 
 def schedule(session_id: int, run: Callable[[threading.Event], None],
@@ -95,6 +115,8 @@ def schedule(session_id: int, run: Callable[[threading.Event], None],
     def set_stage(stage: str) -> None:
         with _lock:
             job.stage = stage
+            # skipped 跨 stage 累計，done/total 每個 stage 重新起算。
+            job.done = job.total = 0
 
     def _run_gpu_stage() -> bool:
         """The card-bound stage. Returns False if the job ended inside it (cancelled or failed).

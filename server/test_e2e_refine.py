@@ -130,7 +130,8 @@ def test_llm_stages_do_not_hold_the_gpu_gate(client: TestClient) -> None:
         assert wait_for(in_followup.is_set), "followup never started"
 
         # The pass is mid-followup and must not be holding the card.
-        assert jobs.state(session_id) == {"state": "refining", "stage": "summarize", "error": ""}
+        assert jobs.state(session_id) == {"state": "refining", "stage": "summarize", "error": "",
+                                          "done": 0, "total": 0, "skipped": 0}
         assert jobs.claim_gpu(timeout=1.0), "the LLM stage is holding the GPU gate"
         jobs.release_gpu()
     finally:
@@ -680,7 +681,7 @@ def test_the_auto_refine_pass_leaves_a_human_corrected_line_alone(tmp: Path) -> 
             def __init__(self, chat, topic="會議"):
                 pass
 
-            def refine(self, lines, terms=None, rejected=None, coverage=None):
+            def refine(self, lines, terms=None, rejected=None, coverage=None, on_progress=None):
                 return [f"機器改寫{i}" for i, _ in enumerate(lines)]
 
         saved = postmeeting.refine.Refiner
@@ -733,6 +734,57 @@ def test_vad_cut_fragments_are_merged_and_punctuated(tmp: Path) -> None:
         assert [r["source"] for r in st.lines(sid2)] == ["沒有模型也要合併"]
     finally:
         st.close()
+
+
+def test_a_punctuation_batch_that_fails_once_is_retried(tmp: Path) -> None:
+    """LLM 批次偶發失敗（超時、壞 JSON）一次就丟掉整批太浪費——重試一次通常就過。"""
+    from . import postmeeting
+
+    st = store_mod.Store(tmp / "segment-retry.db")
+    try:
+        sid = st.start_session("2026-01-01T09:00:00", "retry.wav")
+        st.add_line(sid, 0.0, "S1", "zh", "第一句沒有標點", {}, end_time=5.0)
+
+        calls = []
+
+        def flaky(prompt: str) -> str:
+            calls.append(1)
+            if len(calls) == 1:
+                raise RuntimeError("boom")
+            return "1: 第一句，沒有標點。"
+
+        postmeeting._segment_stage(st, sid, flaky)
+        assert [r["source"] for r in st.lines(sid)] == ["第一句，沒有標點。"]
+        assert len(calls) == 2, calls
+    finally:
+        st.close()
+
+
+def test_a_twice_failed_punctuation_batch_is_counted_as_skipped(tmp: Path) -> None:
+    """重試後仍失敗的批次保留原文並計入 skipped，讓儀表板說得出「幾行沒處理到」。"""
+    from . import postmeeting
+
+    jobs.reset()
+    st = store_mod.Store(tmp / "segment-skip.db")
+    try:
+        sid = st.start_session("2026-01-01T09:00:00", "skip.wav")
+        st.add_line(sid, 0.0, "S1", "zh", "壞掉的一批", {}, end_time=5.0)
+
+        def broken(prompt: str) -> str:
+            raise RuntimeError("boom")
+
+        def followup(cancel, set_stage):
+            set_stage("segment")
+            postmeeting._segment_stage(st, sid, broken)
+
+        assert jobs.schedule(sid, lambda cancel: None, followup=followup, needs_gpu=False)
+        assert wait_for(lambda: (jobs.state(sid) or {}).get("state") == "refined")
+        s = jobs.state(sid)
+        assert (s["skipped"], s["done"], s["total"]) == (1, 1, 1), s
+        assert [r["source"] for r in st.lines(sid)] == ["壞掉的一批"]
+    finally:
+        st.close()
+        jobs.cancel_all(wait=1.0)
 
 
 def test_markdown_export_lists_speakers_in_numeric_order(tmp: Path) -> None:

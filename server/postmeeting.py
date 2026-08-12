@@ -120,15 +120,23 @@ def _segment_stage(store: Store, session_id: int, chat: Callable[[str], str] | N
     if joined:
         rows = store.lines(session_id)
     punctuated = 0
+    jobs.set_progress(session_id, 0, len(rows))
     for start in range(0, len(rows), refine.CHUNK_LINES):
         chunk = rows[start : start + refine.CHUNK_LINES]
         texts = [r["source"] for r in chunk]
-        try:
-            out = segment.parse_response(chat(segment.build_prompt(texts)), texts)
-        except jobs.Cancelled:
-            raise
-        except Exception:
-            log.exception("punctuation failed at line %d, keeping originals", start)
+        out = None
+        for attempt in (1, 2):
+            try:
+                out = segment.parse_response(chat(segment.build_prompt(texts)), texts)
+                break
+            except jobs.Cancelled:
+                raise
+            except Exception:
+                log.exception("punctuation failed at line %d (attempt %d)", start, attempt)
+        jobs.set_progress(session_id, done=min(start + refine.CHUNK_LINES, len(rows)),
+                          total=len(rows))
+        if out is None:
+            jobs.set_progress(session_id, skipped_add=len(chunk))
             continue
         for row, text in zip(chunk, out):
             # A human-corrected line's punctuation is the human's choice.
@@ -144,7 +152,10 @@ def _refine_stage(store: Store, session_id: int, chat: Callable[[str], str]) -> 
         return
     lines = [refine.Line(r["speaker"], r["lang"], r["source"]) for r in rows]
     coverage = refine.Coverage()
-    corrected = refine.Refiner(chat).refine(lines, terms=store.glossary(), coverage=coverage)
+    corrected = refine.Refiner(chat).refine(
+        lines, terms=store.glossary(), coverage=coverage,
+        on_progress=lambda done, total: jobs.set_progress(session_id, done=done, total=total))
+    jobs.set_progress(session_id, skipped_add=coverage.skipped)
     changed = 0
     for row, text in zip(rows, corrected):
         # A refined line is never rewritten twice (update_line's own promise): a human correction is
