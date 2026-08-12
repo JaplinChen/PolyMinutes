@@ -67,7 +67,7 @@
     "importHint": "A meeting recorded elsewhere becomes a session like any other: name the speakers to teach their voices, correct a line to teach the fix. Video or audio; the audio track is extracted with ffmpeg.",
     "importPick": "Choose a file",
     "importing": "Uploading…",
-    "importUrlPlaceholder": "Or paste a link — YouTube, a shared recording…",
+    "importUrlPlaceholder": "Or paste a link or a server path — YouTube, \\\\nas\\meetings\\…",
     "importUrlGo": "Fetch",
     "refining": "Refining",
     "refined": "Refined",

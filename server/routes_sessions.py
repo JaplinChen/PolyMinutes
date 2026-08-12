@@ -448,20 +448,27 @@ async def import_recording(request: Request, filename: str = "upload") -> dict:
 
 @router.post("/api/sessions/import-url")
 def import_url(body: dict) -> dict:
-    """Import a meeting from a link — YouTube, a shared recording, anywhere yt-dlp can reach.
+    """Import a meeting from a link or a path the server can read.
 
-    The download can take minutes, so the whole chain — fetch, extract, rewrite — runs as the
-    session's refine job: the response returns as soon as the session exists and the refine chip
-    tracks it, exactly like a file import. A failed download is a failed job on the chip, with
-    yt-dlp's own last line as the reason.
+    A http(s) link goes through yt-dlp — YouTube, a shared recording, anywhere it can reach.
+    Anything else is taken as a file path — a UNC share like \\\\nas\\meetings\\friday.mp4 is where
+    the room's recordings already live, and the server reading it directly beats routing the same
+    bytes through a browser upload. The original on the share is read, never touched.
+
+    Fetch or read, extract, rewrite all run as the session's refine job: the response returns as
+    soon as the session exists and the refine chip tracks it, exactly like a file import. A failed
+    fetch is a failed job on the chip, with the tool's own last line as the reason.
     """
     url = str(body.get("url", "")).strip()
-    if not url.lower().startswith(("http://", "https://")):
-        raise HTTPException(400, "a http(s) URL is required")
-    # Checked here rather than discovered by the job: a missing tool is the operator's problem to
-    # fix now, not a failure to find on a chip minutes later.
-    if not ingest.have_downloader():
+    if not url:
+        raise HTTPException(400, "a http(s) URL or a file path is required")
+    is_link = url.lower().startswith(("http://", "https://"))
+    # Checked here rather than discovered by the job: a missing tool or a bad path is the caller's
+    # problem to fix now, not a failure to find on a chip minutes later.
+    if is_link and not ingest.have_downloader():
         raise HTTPException(503, "yt-dlp is not installed — pip install yt-dlp")
+    if not is_link and not Path(url).is_file():
+        raise HTTPException(400, f"not a http(s) URL, and the server finds no file at: {url}")
 
     tag, wav = _import_slot()
     source = config.RECORDINGS_DIR / f"import-{tag}.download"
@@ -470,12 +477,16 @@ def import_url(body: dict) -> dict:
     main.store.end_session(session_id, now)
 
     def run(cancel):
-        try:
-            ingest.download_audio(url, source)
-            ingest.extract_audio(source, wav)
-        finally:
-            # The download is not evidence — every stage after this reads the wav.
-            source.unlink(missing_ok=True)
+        if is_link:
+            try:
+                ingest.download_audio(url, source)
+                ingest.extract_audio(source, wav)
+            finally:
+                # The download is not evidence — every stage after this reads the wav.
+                source.unlink(missing_ok=True)
+        else:
+            # Someone else's file on someone else's share: extracted from, never deleted.
+            ingest.extract_audio(Path(url), wav)
         main.postprocess.rewrite_session(main.store, session_id, wav, main.state["cfg"],
                                          main._make_translator(), should_stop=cancel.is_set,
                                          gpu=jobs.borrow_gpu)

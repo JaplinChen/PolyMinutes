@@ -602,7 +602,7 @@ export function Sessions() {
           </label>
           <div className="sess-import-url">
             <input
-              type="url"
+              type="text"
               value={importUrl}
               placeholder={t('sessions.importUrlPlaceholder')}
               disabled={importing}

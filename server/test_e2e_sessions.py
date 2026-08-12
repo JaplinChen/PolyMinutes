@@ -219,7 +219,9 @@ def test_importing_from_a_url_makes_it_a_session(client: TestClient) -> None:
     response returns at once and a bad link is a failed job on the chip, not a hung request."""
     from . import ingest
 
-    assert client.post("/api/sessions/import-url", json={"url": "not a url"}).status_code == 400
+    # Not a link, and no such file on the server: named as a path problem, not swallowed as a job.
+    r = client.post("/api/sessions/import-url", json={"url": "\\\\nas\\nowhere\\gone.mp4"})
+    assert r.status_code == 400 and "no file" in r.json()["detail"], r.text
     assert client.post("/api/sessions/import-url", json={}).status_code == 400
 
     real_have = ingest.have_downloader
@@ -274,6 +276,19 @@ def test_importing_from_a_url_makes_it_a_session(client: TestClient) -> None:
     Path(config.recording_path(
         next(s for s in client.get("/api/sessions").json() if s["id"] == failed)["wav_path"]
     )).unlink(missing_ok=True)
+
+    # A non-link is a path the server reads directly — and the original must survive the import.
+    shared = config.RECORDINGS_DIR / "share-fixture.m4a"
+    fake_download("", shared)
+    r = client.post("/api/sessions/import-url", json={"url": str(shared)})
+    assert r.status_code == 200, r.text
+    from_path = r.json()["id"]
+    assert wait_for(lambda: (jobs.state(from_path) or {}).get("state") == "refined")
+    kept = next(s for s in client.get("/api/sessions").json() if s["id"] == from_path)
+    assert Path(config.recording_path(kept["wav_path"])).stat().st_size > 0
+    assert shared.is_file(), "the source on the share must not be deleted"
+    shared.unlink()
+    Path(config.recording_path(kept["wav_path"])).unlink(missing_ok=True)
 
 
 def test_recordings_survive_a_renamed_project_directory(tmp: Path) -> None:
