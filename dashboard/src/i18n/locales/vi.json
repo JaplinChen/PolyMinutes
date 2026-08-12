@@ -67,7 +67,7 @@
     "importHint": "Một cuộc họp ghi ở nơi khác sau khi nhập sẽ thành bản ghi bình thường: đặt tên người nói để học giọng, sửa một dòng để học bản sửa. Video hoặc âm thanh đều được; phần âm thanh được tách bằng ffmpeg.",
     "importPick": "Chọn tệp",
     "importing": "Đang tải lên…",
-    "importUrlPlaceholder": "Hoặc dán liên kết — YouTube, bản ghi được chia sẻ…",
+    "importUrlPlaceholder": "Hoặc dán liên kết hoặc đường dẫn máy chủ — YouTube, \\\\nas\\meetings\\…",
     "importUrlGo": "Tải về",
     "refining": "Đang tinh chỉnh",
     "refined": "Đã tinh chỉnh",

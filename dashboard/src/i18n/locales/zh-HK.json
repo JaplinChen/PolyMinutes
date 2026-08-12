@@ -67,7 +67,7 @@
     "importHint": "在別處錄下的會議匯入後就是一般的會議紀錄：為發言者命名即可學會他的聲音，修正句子即可學會該修正。影片或音訊皆可，音軌會用 ffmpeg 抽出。",
     "importPick": "選擇檔案",
     "importing": "上傳中……",
-    "importUrlPlaceholder": "或貼上連結——YouTube、分享的錄影……",
+    "importUrlPlaceholder": "或貼上連結或伺服器路徑——YouTube、\\\\nas\\meetings\\……",
     "importUrlGo": "擷取",
     "refining": "精修中",
     "refined": "已精修",
