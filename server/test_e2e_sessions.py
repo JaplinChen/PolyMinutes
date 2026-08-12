@@ -660,6 +660,38 @@ def test_a_sample_avoids_the_longest_line_and_plays_the_middle(client: TestClien
     assert len(heard) == 20.0 * rate, "a line clip is the whole line, not a centred slice"
 
     main.store.delete_session(session)
+
+
+def test_a_sample_prefers_mid_monologue_over_a_speaker_boundary(client: TestClient) -> None:
+    """A line flanked by other speakers sits exactly where a missed turn leaves their voice in it.
+
+    Found on a real import: the sample rule picked a 7.8s line wedged between two other people
+    while the same speaker had a 7.3s line inside his own monologue. Duration proximity must not
+    outrank being nowhere near a speaker change.
+    """
+    import soundfile as sf
+
+    wav = config.RECORDINGS_DIR / "boundary-sample.wav"
+    wav.parent.mkdir(parents=True, exist_ok=True)
+    sf.write(str(wav), np.zeros(config.SAMPLE_RATE * 60, dtype="float32"), config.SAMPLE_RATE)
+
+    session = main.store.start_session("now", str(wav))
+    # An 8s line wedged between two other speakers — ideal length, dirtiest position.
+    main.store.add_line(session, 0.0, "S2", "zh", "前一位", {}, end_time=9.5)
+    main.store.add_line(session, 10.0, "S1", "zh", "夾在別人中間的八秒句", {}, end_time=18.0)
+    main.store.add_line(session, 18.5, "S3", "zh", "後一位", {}, end_time=20.0)
+    # A 5s line inside S1's own monologue — farther from eight, nowhere near a boundary.
+    main.store.add_line(session, 30.0, "S1", "zh", "獨白第一句", {}, end_time=36.0)
+    main.store.add_line(session, 36.5, "S1", "zh", "獨白中段的五秒句", {}, end_time=41.5)
+    main.store.add_line(session, 42.0, "S1", "zh", "獨白最後一句", {}, end_time=50.0)
+
+    assert main.store.session_speaker_sample(session, "S1") == (str(wav), 36.5, 5.0)
+
+    # The named path applies the same rule.
+    main.store.set_speaker_name(session, "S1", "邊界測試員")
+    assert main.store.speaker_sample("邊界測試員", session) == (str(wav), 36.5, 5.0)
+
+    main.store.delete_session(session)
     wav.unlink(missing_ok=True)
 
 
