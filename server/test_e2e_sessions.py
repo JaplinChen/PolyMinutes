@@ -150,6 +150,26 @@ def test_several_codes_for_one_person_merge_into_one(client: TestClient) -> None
                        json={"into": "S1", "from": []}).status_code == 400
 
 
+def test_merging_codes_joins_the_fragments_they_held_apart(client: TestClient) -> None:
+    """A stutter's pieces handed to a phantom code stay separate lines only because the codes
+    differ; folding the codes back together must also stitch the sentence back together."""
+    session = main.store.start_session("now", "")
+    main.store.add_line(session, 1.0, "S1", "zh", "這個專案我們", {}, end_time=3.0)
+    main.store.add_line(session, 3.4, "S9", "zh", "呃就是說", {}, end_time=4.2)
+    main.store.add_line(session, 4.6, "S1", "zh", "下週會給結論", {}, end_time=6.0)
+    main.store.add_line(session, 20.0, "S1", "zh", "隔了很久的另一句", {}, end_time=22.0)
+
+    merged = client.post(f"/api/sessions/{session}/speakers/merge",
+                         json={"into": "S1", "from": ["S9"]})
+    assert merged.status_code == 200, merged.text
+    texts = [l["source"] for l in merged.json()["lines"]]
+    # Three fragments stitched into one line; the distant sentence stays its own.
+    assert len(texts) == 2, texts
+    assert "這個專案我們" in texts[0] and "下週會給結論" in texts[0], texts
+    assert "隔了很久" in texts[1], texts
+    assert session in main.postmeeting.segment_calls
+
+
 def test_a_session_exports_as_a_word_document(client: TestClient) -> None:
     """The enterprise deliverable is a .docx, and it has to carry the transcript, not just open."""
     session = main.store.start_session("now", "")

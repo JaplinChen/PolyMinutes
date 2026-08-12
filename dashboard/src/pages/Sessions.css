@@ -181,6 +181,20 @@
   font-weight: 600;
 }
 
+/* After the generic span rule so the badge look wins over the code-label look. */
+.sess-page .sess-name-field .sess-frag {
+  min-width: 0;
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border: 1px solid var(--warning, #b5852a);
+  border-radius: var(--radius-sm);
+  color: var(--warning, #b5852a);
+  font-family: inherit;
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: help;
+}
+
 .sess-page .sess-name-field input {
   flex: 1;
   min-width: 0;

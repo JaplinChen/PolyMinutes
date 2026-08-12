@@ -457,6 +457,20 @@ export function Sessions() {
   }, [lines, names, query]);
 
   const codes = [...new Set(lines.map(l => l.speaker))];
+  // A code with only a few lines, none of them inside its own run of consecutive lines, is a
+  // fragment cluster: stutter pieces and misjudged embeddings wedged into other people's speech.
+  // Its sample has no clean line to play, so the naming row warns instead of misleading.
+  const fragCodes = useMemo(() => {
+    const sorted = [...lines].sort((a, b) => a.start - b.start);
+    const stats = new Map<string, { count: number; midRun: boolean }>();
+    sorted.forEach((l, i) => {
+      const s = stats.get(l.speaker) ?? { count: 0, midRun: false };
+      s.count += 1;
+      if (sorted[i - 1]?.speaker === l.speaker && sorted[i + 1]?.speaker === l.speaker) s.midRun = true;
+      stats.set(l.speaker, s);
+    });
+    return new Set([...stats].filter(([, s]) => s.count <= 3 && !s.midRun).map(([c]) => c));
+  }, [lines]);
   // Stable identities so a play/edit click doesn't rebuild 943 memoised rows. Options are every
   // speaker the meeting has; the new code is the next free S-number, for splitting the collapse.
   const speakerOptions = useMemo(
@@ -652,6 +666,11 @@ export function Sessions() {
                 />
                 <label className="sess-name-field">
                   <span>{code}</span>
+                  {fragCodes.has(code) && (
+                    <span className="sess-frag" title={t('sessions.fragmentHint')}>
+                      {t('sessions.fragmentBadge')}
+                    </span>
+                  )}
                   <input
                     value={names[code] ?? ''}
                     placeholder={t('sessions.namePlaceholder')}

@@ -69,6 +69,8 @@
     "importing": "上傳中……",
     "importUrlPlaceholder": "或貼上連結或伺服器路徑——YouTube、\\\\nas\\meetings\\……",
     "importUrlGo": "擷取",
+    "fragmentBadge": "碎片",
+    "fragmentHint": "此發言者只有零星幾句，且每句都貼著換手處——樣本可能混入他人聲音，建議聽逐字稿確認後直接合併進本尊，不必命名。",
     "refining": "精修中",
     "refined": "已精修",
     "refineFailed": "精修失敗",
