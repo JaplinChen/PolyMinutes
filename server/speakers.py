@@ -30,13 +30,22 @@ KNOWN_DUP_THRESHOLD = 0.85
 # speaker turn is unlikely to be inside it. Sampling the *longest* utterance — the previous rule —
 # adversely selected the dirtiest line: a line is long exactly when the segmenter missed a turn
 # inside it, so the sample opened with somebody else's voice. Under three seconds only as a last
-# resort ("謝謝" identifies nobody); otherwise the closest to eight; text length breaks ties for
-# transcripts written before end_time existed.
+# resort ("謝謝" identifies nobody); otherwise mid-monologue lines — flanked by the same speaker
+# on both sides — before lines at a speaker boundary, which is where a missed turn leaves the
+# other voice; then the closest to eight seconds; text length breaks ties for transcripts written
+# before end_time existed. Measured on a real 2.7h import: the previous rule picked a boundary
+# line (S8 before, S3 after) for a speaker who had a same-length line inside his own monologue.
 SAMPLE_MIN_SECONDS = 3.0
 SAMPLE_IDEAL_SECONDS = 8.0
+_SAMPLE_LINES = ("WITH l AS (SELECT line.*, "
+                 "LAG(line.speaker) OVER w AS prev_speaker, "
+                 "LEAD(line.speaker) OVER w AS next_speaker FROM line "
+                 "WINDOW w AS (PARTITION BY line.session_id ORDER BY line.start)) ")
 _SAMPLE_ORDER = ("ORDER BY (COALESCE(l.end_time - l.start, 0) < "
-                 f"{SAMPLE_MIN_SECONDS}), ABS(COALESCE(l.end_time - l.start, 0) - "
-                 f"{SAMPLE_IDEAL_SECONDS}), LENGTH(l.source) DESC")
+                 f"{SAMPLE_MIN_SECONDS}), "
+                 "(l.prev_speaker IS NOT l.speaker OR l.next_speaker IS NOT l.speaker), "
+                 f"ABS(COALESCE(l.end_time - l.start, 0) - {SAMPLE_IDEAL_SECONDS}), "
+                 "LENGTH(l.source) DESC")
 
 
 def _cosine(a: np.ndarray, b: np.ndarray) -> float:
@@ -261,9 +270,10 @@ class SpeakerStore:
         """
         with self._lock:
             row = self._db.execute(
+                f"{_SAMPLE_LINES}"
                 "SELECT s.wav_path AS wav, l.start AS start, l.end_time AS end_time "
                 "FROM speaker_name sn "
-                "JOIN line l ON l.session_id=sn.session_id AND l.speaker=sn.code "
+                "JOIN l ON l.session_id=sn.session_id AND l.speaker=sn.code "
                 "JOIN session s ON s.id=sn.session_id "
                 f"WHERE sn.name=? AND sn.session_id=? {_SAMPLE_ORDER} LIMIT 1",
                 (name, session_id),
@@ -302,7 +312,8 @@ class SpeakerStore:
         """
         with self._lock:
             row = self._db.execute(
-                "SELECT s.wav_path AS wav, l.start AS start, l.end_time AS end_time FROM line l "
+                f"{_SAMPLE_LINES}"
+                "SELECT s.wav_path AS wav, l.start AS start, l.end_time AS end_time FROM l "
                 "JOIN session s ON s.id = l.session_id "
                 f"WHERE l.session_id=? AND l.speaker=? {_SAMPLE_ORDER} LIMIT 1",
                 (session_id, code),
