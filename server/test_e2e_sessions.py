@@ -214,6 +214,68 @@ def test_importing_a_recording_makes_it_a_session(client: TestClient) -> None:
     assert len({s["wav_path"] for s in imports}) == 2, imports
 
 
+def test_importing_from_a_url_makes_it_a_session(client: TestClient) -> None:
+    """A link is imported the way a file is: the fetch rides inside the refine job, so the
+    response returns at once and a bad link is a failed job on the chip, not a hung request."""
+    from . import ingest
+
+    assert client.post("/api/sessions/import-url", json={"url": "not a url"}).status_code == 400
+    assert client.post("/api/sessions/import-url", json={}).status_code == 400
+
+    real_have = ingest.have_downloader
+    ingest.have_downloader = lambda: False
+    try:
+        r = client.post("/api/sessions/import-url", json={"url": "https://example.com/v"})
+        assert r.status_code == 503, r.text
+    finally:
+        ingest.have_downloader = real_have
+
+    if shutil.which("ffmpeg") is None or not ingest.have_downloader():
+        print("  (skipped success path: ffmpeg or yt-dlp not installed)")
+        return
+
+    import soundfile as sf
+
+    def fake_download(url: str, dest: Path) -> None:
+        tone = np.sin(np.arange(config.SAMPLE_RATE * 2) * 0.05).astype("float32")
+        raw = config.RECORDINGS_DIR / "urlfixture.wav"
+        sf.write(str(raw), tone, config.SAMPLE_RATE)
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(raw), "-f", "mp4", str(dest)],
+                       check=True)
+        raw.unlink()
+
+    real_download = ingest.download_audio
+    ingest.download_audio = fake_download
+    try:
+        r = client.post("/api/sessions/import-url", json={"url": "https://example.com/talk"})
+        assert r.status_code == 200 and r.json()["state"] == "refining", r.text
+        session_id = r.json()["id"]
+        assert wait_for(lambda: (jobs.state(session_id) or {}).get("state") == "refined")
+    finally:
+        ingest.download_audio = real_download
+
+    imported = next(s for s in client.get("/api/sessions").json() if s["id"] == session_id)
+    wav = Path(config.recording_path(imported["wav_path"]))
+    assert imported["ended"] and wav.is_file() and wav.stat().st_size > 0
+    assert session_id in main.postprocess.calls
+    # The fetched media is not kept — only the extracted wav is.
+    assert not list(config.RECORDINGS_DIR.glob("import-*.download"))
+    wav.unlink(missing_ok=True)
+
+    # A download that fails must surface on the job, with the tool's reason.
+    ingest.download_audio = lambda url, dest: (_ for _ in ()).throw(ValueError("HTTP 404"))
+    try:
+        r = client.post("/api/sessions/import-url", json={"url": "https://example.com/gone"})
+        failed = r.json()["id"]
+        assert wait_for(lambda: (jobs.state(failed) or {}).get("state") == "failed")
+        assert "404" in (jobs.state(failed) or {}).get("error", "")
+    finally:
+        ingest.download_audio = real_download
+    Path(config.recording_path(
+        next(s for s in client.get("/api/sessions").json() if s["id"] == failed)["wav_path"]
+    )).unlink(missing_ok=True)
+
+
 def test_recordings_survive_a_renamed_project_directory(tmp: Path) -> None:
     """Stored paths must not pin a recording to the folder name the project had that day.
 

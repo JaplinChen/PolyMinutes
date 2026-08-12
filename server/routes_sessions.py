@@ -378,6 +378,25 @@ def refine_state(session_id: int) -> dict:
     return {"session": session_id, **(jobs.state(session_id) or {"state": "idle", "error": ""})}
 
 
+def _import_slot() -> tuple[str, Path]:
+    """A unique import-<tag> name, the wav reserved on disk at once.
+
+    Reserved by creating it, not by checking: a URL import only writes its wav minutes after
+    picking the name, and two imports inside the same second would otherwise share one — the first
+    session would end up pointing at the second one's audio.
+    """
+    config.RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    tag, n = stamp, 1
+    while True:
+        wav = config.RECORDINGS_DIR / f"import-{tag}.wav"
+        try:
+            wav.touch(exist_ok=False)
+            return tag, wav
+        except FileExistsError:
+            tag, n = f"{stamp}-{n}", n + 1
+
+
 @router.post("/api/sessions/import")
 async def import_recording(request: Request, filename: str = "upload") -> dict:
     """Learn from a meeting that was recorded somewhere else.
@@ -389,15 +408,8 @@ async def import_recording(request: Request, filename: str = "upload") -> dict:
     # ponytail: raw body rather than multipart, so no python-multipart dependency. Streamed to
     # disk because a meeting recording does not belong in memory.
     stem = re.sub(r"[^\w.-]", "_", Path(filename).name).strip("._") or "upload"
-    config.RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
-    # Two imports inside the same second would otherwise share a name, and the first session would
-    # end up pointing at the second one's audio.
-    stamp = time.strftime("%Y%m%d-%H%M%S")
-    tag, n = stamp, 1
-    while (config.RECORDINGS_DIR / f"import-{tag}.wav").exists():
-        tag, n = f"{stamp}-{n}", n + 1
+    tag, wav = _import_slot()
     source = config.RECORDINGS_DIR / f"import-{tag}-{stem}"
-    wav = config.RECORDINGS_DIR / f"import-{tag}.wav"
 
     written = 0
     with source.open("wb") as out:
@@ -405,6 +417,7 @@ async def import_recording(request: Request, filename: str = "upload") -> dict:
             written += out.write(chunk)
     if not written:
         source.unlink(missing_ok=True)
+        wav.unlink(missing_ok=True)
         raise HTTPException(400, "empty upload")
 
     try:
@@ -430,6 +443,49 @@ async def import_recording(request: Request, filename: str = "upload") -> dict:
     # refine chip tracks the pass, and an import gets the same LLM correction and summary stages a
     # recorded meeting does instead of stopping at the rewrite.
     main._refine(session_id, wav)
+    return {"id": session_id, **(jobs.state(session_id) or {})}
+
+
+@router.post("/api/sessions/import-url")
+def import_url(body: dict) -> dict:
+    """Import a meeting from a link — YouTube, a shared recording, anywhere yt-dlp can reach.
+
+    The download can take minutes, so the whole chain — fetch, extract, rewrite — runs as the
+    session's refine job: the response returns as soon as the session exists and the refine chip
+    tracks it, exactly like a file import. A failed download is a failed job on the chip, with
+    yt-dlp's own last line as the reason.
+    """
+    url = str(body.get("url", "")).strip()
+    if not url.lower().startswith(("http://", "https://")):
+        raise HTTPException(400, "a http(s) URL is required")
+    # Checked here rather than discovered by the job: a missing tool is the operator's problem to
+    # fix now, not a failure to find on a chip minutes later.
+    if not ingest.have_downloader():
+        raise HTTPException(503, "yt-dlp is not installed — pip install yt-dlp")
+
+    tag, wav = _import_slot()
+    source = config.RECORDINGS_DIR / f"import-{tag}.download"
+    now = time.strftime("%Y-%m-%dT%H:%M:%S")
+    session_id = main.store.start_session(now, str(wav))
+    main.store.end_session(session_id, now)
+
+    def run(cancel):
+        try:
+            ingest.download_audio(url, source)
+            ingest.extract_audio(source, wav)
+        finally:
+            # The download is not evidence — every stage after this reads the wav.
+            source.unlink(missing_ok=True)
+        main.postprocess.rewrite_session(main.store, session_id, wav, main.state["cfg"],
+                                         main._make_translator(), should_stop=cancel.is_set,
+                                         gpu=jobs.borrow_gpu)
+
+    # Same wiring as `_refine`, plus the fetch in front; needs_gpu=False for the same reason —
+    # `rewrite_session` takes the card itself, around the decode alone.
+    jobs.schedule(session_id, run,
+                  followup=main.postmeeting.followup(main.store, main.state["cfg"].languages,
+                                                     main.state["llm"], main._api_key(), session_id),
+                  needs_gpu=False)
     return {"id": session_id, **(jobs.state(session_id) or {})}
 
 

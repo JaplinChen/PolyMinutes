@@ -8,8 +8,10 @@ has to know an upload happened.
 
 from __future__ import annotations
 
+import importlib.util
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 from . import config
@@ -34,3 +36,30 @@ def extract_audio(src: Path, dest: Path) -> None:
         # ffmpeg's last line names the actual problem; the rest is banner noise no one can act on.
         detail = (done.stderr or "").strip().splitlines()
         raise ValueError(detail[-1] if detail else "ffmpeg could not read that file")
+
+
+def have_downloader() -> bool:
+    """Whether yt-dlp is importable — checked in the endpoint so a missing tool is a 503 up front,
+    not a failed background job discovered minutes later."""
+    return importlib.util.find_spec("yt_dlp") is not None
+
+
+def download_audio(url: str, dest: Path) -> None:
+    """Fetch `url`'s audio track to `dest` with yt-dlp, for `extract_audio` to normalise.
+
+    A subprocess like ffmpeg, not an import: yt-dlp in-process would hold the GIL through a long
+    download, and `python -m yt_dlp` needs no PATH entry the way the `yt-dlp` binary would.
+    bestaudio is a single stream, so no merge step rewrites the output name — `dest` is literal.
+    """
+    if not have_downloader():
+        raise RuntimeError("yt-dlp is not installed — it is needed to fetch audio from a URL")
+    done = subprocess.run(
+        [sys.executable, "-m", "yt_dlp", "--no-playlist", "-f", "bestaudio/best",
+         "--quiet", "--no-warnings", "-o", str(dest), "--", url],
+        capture_output=True, text=True,
+    )
+    if done.returncode != 0:
+        detail = (done.stderr or "").strip().splitlines()
+        raise ValueError(detail[-1] if detail else "yt-dlp could not fetch that URL")
+    if not dest.exists():
+        raise ValueError("yt-dlp reported success but wrote no file")

@@ -174,6 +174,12 @@ export const appApi = {
       body: file,
       headers: { 'Content-Type': 'application/octet-stream' },
     }),
+  // The download rides inside the refine job, so this also returns at once.
+  importUrl: (url: string) =>
+    request<{ id: number; state: string }>('/sessions/import-url', {
+      method: 'POST',
+      body: JSON.stringify({ url }),
+    }),
   sessionLines: (id: number) =>
     request<{ lines: TranscriptLine[]; speakers: Record<string, string> }>(`/sessions/${id}/lines`),
   setSpeakerNames: (id: number, names: Record<string, string>) =>
