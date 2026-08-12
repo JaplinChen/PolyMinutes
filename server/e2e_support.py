@@ -14,7 +14,8 @@ from pathlib import Path
 
 import numpy as np
 
-from . import config, jobs, llm, main, postprocess as postprocess_mod
+from . import config, jobs, llm, main, postmeeting as postmeeting_mod
+from . import postprocess as postprocess_mod
 from . import retry as retry_mod, store as store_mod, translate
 from .pipeline import Pipeline
 
@@ -50,6 +51,7 @@ class StubPostmeeting:
     def __init__(self) -> None:
         self.followups: list[int] = []
         self.summarize_calls: list[int] = []
+        self.segment_calls: list[int] = []
         self.replies: list[str] | None = None
         self.prompts: list[str] = []
 
@@ -57,6 +59,12 @@ class StubPostmeeting:
         def run(cancel, set_stage):
             self.followups.append(session_id)
         return run
+
+    def _segment_stage(self, store, session_id, chat):
+        # Recorded, then the real thing: with chat=None it is pure store arithmetic — no LLM to
+        # keep out of the tests — and the merge endpoint's join behaviour deserves real coverage.
+        self.segment_calls.append(session_id)
+        postmeeting_mod._segment_stage(store, session_id, chat)
 
     def _summarize_stage(self, store, session_id, languages, llm_cfg, api_key, cancel):
         self.summarize_calls.append(session_id)

@@ -93,6 +93,11 @@ def merge_speakers(session_id: int, body: dict) -> dict:
     if not into or not sources:
         raise HTTPException(400, "into and from required")
     main.store.merge_speakers(session_id, into, sources)
+    # The fragments that forced this merge are usually the same fragments the VAD cut mid-sentence
+    # — a stutter's pieces handed to a phantom code. Now that they share a code, the segment join
+    # can finally reach them. Arithmetic only (chat=None): the LLM punctuation pass stays in the
+    # refine followup, because a click must not wait on a model.
+    main.postmeeting._segment_stage(main.store, session_id, None)
     return {"lines": main.store.lines(session_id), "speakers": main.store.speaker_names(session_id)}
 
 

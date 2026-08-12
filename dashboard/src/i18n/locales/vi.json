@@ -69,6 +69,8 @@
     "importing": "Đang tải lên…",
     "importUrlPlaceholder": "Hoặc dán liên kết hoặc đường dẫn máy chủ — YouTube, \\\\nas\\meetings\\…",
     "importUrlGo": "Tải về",
+    "fragmentBadge": "mảnh rời",
+    "fragmentHint": "Người nói này chỉ có vài câu rời rạc, mỗi câu đều nằm sát chỗ đổi người nói — mẫu giọng có thể lẫn giọng người khác. Hãy xem bản ghi rồi gộp vào đúng người thay vì đặt tên.",
     "refining": "Đang tinh chỉnh",
     "refined": "Đã tinh chỉnh",
     "refineFailed": "Tinh chỉnh thất bại",
