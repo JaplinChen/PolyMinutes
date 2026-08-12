@@ -477,7 +477,18 @@ def import_url(body: dict) -> dict:
     main.store.end_session(session_id, now)
 
     def run(cancel):
+        cues, sub_lang = [], ""
         if is_link:
+            # Subtitle-first: the uploader's own subtitles beat a re-transcription, and cost no
+            # GPU minutes. The audio is still fetched — playback per line, and reprocess for
+            # anyone who wants real speakers, both read the wav.
+            if sub := ingest.download_subtitles(url, main.state["cfg"].languages,
+                                                config.RECORDINGS_DIR, f"import-{tag}"):
+                sub_path, sub_lang = sub
+                try:
+                    cues = ingest.parse_vtt(sub_path)
+                finally:
+                    sub_path.unlink(missing_ok=True)
             try:
                 ingest.download_audio(url, source)
                 ingest.extract_audio(source, wav)
@@ -487,9 +498,14 @@ def import_url(body: dict) -> dict:
         else:
             # Someone else's file on someone else's share: extracted from, never deleted.
             ingest.extract_audio(Path(url), wav)
-        main.postprocess.rewrite_session(main.store, session_id, wav, main.state["cfg"],
-                                         main._make_translator(), should_stop=cancel.is_set,
-                                         gpu=jobs.borrow_gpu)
+        if cues:
+            main.postprocess.subtitle_session(main.store, session_id, cues, sub_lang,
+                                              main.state["cfg"], main._make_translator(),
+                                              should_stop=cancel.is_set)
+        else:
+            main.postprocess.rewrite_session(main.store, session_id, wav, main.state["cfg"],
+                                             main._make_translator(), should_stop=cancel.is_set,
+                                             gpu=jobs.borrow_gpu)
 
     # Same wiring as `_refine`, plus the fetch in front; needs_gpu=False for the same reason —
     # `rewrite_session` takes the card itself, around the decode alone.

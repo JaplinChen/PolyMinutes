@@ -318,6 +318,72 @@ def transcribe_all(utterances: list[Utterance], transcriber: asr.Transcriber,
             u.text, u.lang = (text, used) if text else ("", u.lang)
 
 
+def translated_rows(entries, store: Store, cfg: config.Config,
+                    translator: translate.Translator | None,
+                    stop: Callable[[], bool]) -> list[dict]:
+    """Corrected, translated line rows from (start, end_time, speaker, lang, text) entries.
+
+    One loop for both ways a transcript comes to exist — decoded from audio or read off a subtitle
+    track — so the corrector, the rolling context, the glossary and the failed-translation status
+    behave identically whichever produced the text.
+    """
+    terms = store.glossary()
+    corrector = correct.Corrector(terms, store.corrections())
+    context: list[translate.Line] = []
+    rows: list[dict] = []
+    for start, end_time, speaker, lang, text in entries:
+        if stop():
+            raise jobs.Cancelled()
+        if not text:
+            continue
+        text = corrector.fix(text)
+        line = translate.Line(text=text, lang=lang, speaker=speaker)
+        targets = [c for c in cfg.languages if c != lang]
+        translations: dict[str, str] = {}
+        status = "ok"
+        if translator and targets:
+            try:
+                translations = translator.translate(
+                    line, targets, context=context[-config.CONTEXT_LINES:], terms=terms
+                ).translations
+            except Exception:
+                # Recorded rather than swallowed: a line with no translation and a line whose
+                # translation failed look identical in the transcript, and only one of them is
+                # worth re-running.
+                log.exception("translation failed at %.2fs", start)
+                status = "translate_failed"
+        rows.append({
+            "start": start,
+            "end_time": end_time,
+            "speaker": speaker,
+            "lang": lang,
+            "source": text,
+            "translations": translations,
+            "status": status,
+        })
+        context.append(line)
+    return rows
+
+
+def subtitle_session(store: Store, session_id: int, cues: list[tuple[float, float, str]],
+                     lang: str, cfg: config.Config,
+                     translator: translate.Translator | None = None,
+                     should_stop: Callable[[], bool] | None = None) -> list[dict]:
+    """Store a transcript taken from a subtitle track: no decode, no card, one unknown speaker.
+
+    A subtitle track carries no voices, so every line lands on S1 — reprocess runs the full
+    pipeline from the audio if the speakers matter. Everything else is the shared row loop, so the
+    lines read like any other transcript's.
+    """
+    stop = should_stop or (lambda: False)
+    rows = translated_rows(((s, e, "S1", lang, t) for s, e, t in cues), store, cfg,
+                           translator, stop)
+    if not rows:
+        raise ValueError("the subtitle track had no usable cues")
+    store.replace_lines(session_id, rows)
+    return rows
+
+
 def rewrite_session(store: Store, session_id: int, wav: Path, cfg: config.Config,
                     translator: translate.Translator | None = None,
                     should_stop: Callable[[], bool] | None = None,
@@ -386,42 +452,9 @@ def rewrite_session(store: Store, session_id: int, wav: Path, cfg: config.Config
     # The stored transcript is not touched until every line is translated. Replacing it line by
     # line as they came in meant a failure halfway through left the session holding half a
     # transcript, and a failure right after the delete left it holding none.
-    terms = store.glossary()
-    corrector = correct.Corrector(terms, store.corrections())
-    context: list[translate.Line] = []
-    rows: list[dict] = []
-
-    for u in utterances:
-        if stop():
-            raise jobs.Cancelled()
-        if not u.text:
-            continue
-        u.text = corrector.fix(u.text)
-        line = translate.Line(text=u.text, lang=u.lang, speaker=u.speaker)
-        targets = [c for c in cfg.languages if c != u.lang]
-        translations: dict[str, str] = {}
-        status = "ok"
-        if translator and targets:
-            try:
-                translations = translator.translate(
-                    line, targets, context=context[-config.CONTEXT_LINES:], terms=terms
-                ).translations
-            except Exception:
-                # Recorded rather than swallowed: a line with no translation and a line whose
-                # translation failed look identical in the transcript, and only one of them is
-                # worth re-running.
-                log.exception("translation failed at %.2fs", u.start)
-                status = "translate_failed"
-        rows.append({
-            "start": u.start,
-            "end_time": u.start + len(u.samples) / config.SAMPLE_RATE,
-            "speaker": u.speaker,
-            "lang": u.lang,
-            "source": u.text,
-            "translations": translations,
-            "status": status,
-        })
-        context.append(line)
+    entries = ((u.start, u.start + len(u.samples) / config.SAMPLE_RATE, u.speaker, u.lang, u.text)
+               for u in utterances)
+    rows = translated_rows(entries, store, cfg, translator, stop)
 
     # replace_lines deletes the old transcript before inserting the new. An empty result would make
     # that a bare delete — and a re-transcription that decoded nothing (every utterance came back

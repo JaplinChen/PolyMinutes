@@ -78,9 +78,15 @@ class StubPostprocess:
 
     def __init__(self) -> None:
         self.calls: list[int] = []
+        self.subtitle_calls: list[int] = []
         # Set means "return at once". A test that needs a pass to still be running clears it.
         self.block = threading.Event()
         self.block.set()
+
+    def subtitle_session(self, store, session_id, cues, lang, cfg, translator=None,
+                         should_stop=None):
+        self.subtitle_calls.append(session_id)
+        return cues
 
     def rewrite_session(self, store, session_id, wav, cfg, translator=None, should_stop=None,
                         gpu=contextlib.nullcontext):
