@@ -9,6 +9,7 @@ has to know an upload happened.
 from __future__ import annotations
 
 import importlib.util
+import re
 import shutil
 import subprocess
 import sys
@@ -63,3 +64,56 @@ def download_audio(url: str, dest: Path) -> None:
         raise ValueError(detail[-1] if detail else "yt-dlp could not fetch that URL")
     if not dest.exists():
         raise ValueError("yt-dlp reported success but wrote no file")
+
+
+def download_subtitles(url: str, languages: list[str], dest_dir: Path,
+                       stem: str) -> tuple[Path, str] | None:
+    """The uploader's own subtitles for `url`, if any — (vtt path, language) or None.
+
+    Manual subtitles only, never auto-captions: those are just someone else's ASR, and the local
+    large-v3 beats them — a video with only auto-captions goes through the normal decode. Preferred
+    in the room's configured language order; failing that, whatever the uploader wrote.
+    """
+    out = dest_dir / stem  # yt-dlp appends .<lang>.vtt
+    done = subprocess.run(
+        [sys.executable, "-m", "yt_dlp", "--no-playlist", "--skip-download", "--write-subs",
+         "--sub-langs", "all,-live_chat", "--sub-format", "vtt", "--quiet", "--no-warnings",
+         "-o", str(out), "--", url],
+        capture_output=True, text=True,
+    )
+    written = sorted(dest_dir.glob(f"{stem}.*.vtt"))
+    # A probe failure is not an import failure: the audio path still works without subtitles.
+    if done.returncode != 0 or not written:
+        for p in written:
+            p.unlink(missing_ok=True)
+        return None
+
+    def lang_of(p: Path) -> str:
+        # import-x.en-US.vtt → "en"; the region subtag never matters to the translator.
+        return p.suffixes[-2].lstrip(".").split("-")[0].lower() if len(p.suffixes) >= 2 else ""
+
+    pick = next((p for want in languages for p in written if lang_of(p) == want), written[0])
+    for p in written:
+        if p != pick:
+            p.unlink(missing_ok=True)
+    return pick, lang_of(pick)
+
+
+def parse_vtt(path: Path) -> list[tuple[float, float, str]]:
+    """(start, end, text) cues from a WebVTT file, markup tags stripped."""
+    def seconds(ts: str) -> float:
+        parts = (["0", "0"] + ts.strip().split(":"))[-3:]
+        return int(parts[0]) * 3600 + int(parts[1]) * 60 + float(parts[2].replace(",", "."))
+
+    cues: list[tuple[float, float, str]] = []
+    for block in re.split(r"\n\s*\n", path.read_text(encoding="utf-8", errors="replace")):
+        lines = block.strip().splitlines()
+        timed = next((i for i, l in enumerate(lines) if "-->" in l), None)
+        if timed is None:
+            continue
+        start, _, rest = lines[timed].partition("-->")
+        end = rest.split()[0] if rest.split() else start
+        text = re.sub(r"<[^>]+>", "", " ".join(lines[timed + 1:])).strip()
+        if text:
+            cues.append((seconds(start), seconds(end), text))
+    return cues

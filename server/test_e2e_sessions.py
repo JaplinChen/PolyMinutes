@@ -247,7 +247,10 @@ def test_importing_from_a_url_makes_it_a_session(client: TestClient) -> None:
         raw.unlink()
 
     real_download = ingest.download_audio
+    real_subs = ingest.download_subtitles
     ingest.download_audio = fake_download
+    # Subtitle probing hits the network; these checks are about the audio path.
+    ingest.download_subtitles = lambda *a: None
     try:
         r = client.post("/api/sessions/import-url", json={"url": "https://example.com/talk"})
         assert r.status_code == 200 and r.json()["state"] == "refining", r.text
@@ -289,6 +292,65 @@ def test_importing_from_a_url_makes_it_a_session(client: TestClient) -> None:
     assert shared.is_file(), "the source on the share must not be deleted"
     shared.unlink()
     Path(config.recording_path(kept["wav_path"])).unlink(missing_ok=True)
+
+    # A link whose uploader wrote subtitles skips the decode: the cues become the transcript.
+    def fake_subs(url, languages, dest_dir, stem):
+        vtt = dest_dir / f"{stem}.en.vtt"
+        vtt.write_text("WEBVTT\n\n00:00.000 --> 00:02.000\nhello there\n", encoding="utf-8")
+        return vtt, "en"
+
+    ingest.download_audio = fake_download
+    ingest.download_subtitles = fake_subs
+    try:
+        r = client.post("/api/sessions/import-url", json={"url": "https://example.com/subbed"})
+        subbed = r.json()["id"]
+        assert wait_for(lambda: (jobs.state(subbed) or {}).get("state") == "refined")
+    finally:
+        ingest.download_audio = real_download
+        ingest.download_subtitles = real_subs
+    assert subbed in main.postprocess.subtitle_calls, "subtitles must feed the subtitle path"
+    assert subbed not in main.postprocess.calls, "with subtitles there must be no decode"
+    row = next(s for s in client.get("/api/sessions").json() if s["id"] == subbed)
+    wav = Path(config.recording_path(row["wav_path"]))
+    assert wav.stat().st_size > 0, "the audio is still fetched for playback and reprocess"
+    assert not list(config.RECORDINGS_DIR.glob("import-*.vtt")), "the vtt is not kept"
+    wav.unlink(missing_ok=True)
+
+
+def test_subtitle_cues_become_ordinary_translated_lines(tmp: Path) -> None:
+    """The real subtitle path — parse_vtt through subtitle_session — off the stubs: cues land as
+    S1 lines with translations from the shared row loop, and markup/karaoke tags are stripped."""
+    from . import ingest, postprocess as postprocess_mod
+    from .e2e_support import StubTranslator
+
+    vtt = tmp / "talk.en.vtt"
+    vtt.write_text(
+        "WEBVTT\nKind: captions\n\n"
+        "1\n00:01.000 --> 00:03,500\n<c.yellow>Hello</c> <b>everyone</b>\n\n"
+        "NOTE a comment block with no timestamp\n\n"
+        "2\n01:00:00.000 --> 01:00:02.000\nsecond line\nwrapped onto two\n\n"
+        "00:05.000 --> 00:06.000\n   \n",  # tag-only/blank cue must be dropped
+        encoding="utf-8")
+    cues = ingest.parse_vtt(vtt)
+    assert cues == [(1.0, 3.5, "Hello everyone"), (3600.0, 3602.0, "second line wrapped onto two")]
+
+    session_id = main.store.start_session("2026-01-01T09:00:00", str(tmp / "talk.wav"))
+    main.store.end_session(session_id, "2026-01-01T10:00:00")
+    main.state["cfg"].languages = ["en", "zh"]
+    rows = postprocess_mod.subtitle_session(main.store, session_id, cues, "en",
+                                            main.state["cfg"], StubTranslator())
+    stored = main.store.lines(session_id)
+    assert len(stored) == 2 and all(l["speaker"] == "S1" for l in stored)
+    assert stored[0]["lang"] == "en" and stored[0]["source"] == "Hello everyone"
+    assert stored[0]["translations"]["zh"] == "[zh] Hello everyone"
+    assert rows[1]["start"] == 3600.0
+
+    try:
+        postprocess_mod.subtitle_session(main.store, session_id, [], "en", main.state["cfg"])
+        raise AssertionError("an empty cue list must not wipe the transcript")
+    except ValueError:
+        pass
+    assert len(main.store.lines(session_id)) == 2
 
 
 def test_recordings_survive_a_renamed_project_directory(tmp: Path) -> None:
