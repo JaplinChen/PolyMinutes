@@ -149,6 +149,42 @@ def test_discarded_chunks_are_counted_not_hidden() -> None:
     assert coverage.skipped == 0
 
 
+def test_a_failed_chunk_is_retried_once_before_keeping_originals() -> None:
+    """偶發的模型失敗重試一次就過；連兩次才放棄，且取消例外必須直接往上拋。"""
+    lines = [refine.Line("S1", "zh", "料耗的問題")]
+
+    calls = []
+
+    def flaky(prompt: str) -> str:
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("boom")
+        return "1: 料號的問題"
+
+    coverage = refine.Coverage()
+    assert refine.Refiner(flaky).refine(lines, coverage=coverage) == ["料號的問題"]
+    assert len(calls) == 2 and coverage.skipped == 0
+
+    def broken(prompt: str) -> str:
+        raise RuntimeError("boom")
+
+    coverage = refine.Coverage()
+    progress = []
+    out = refine.Refiner(broken).refine(
+        lines, coverage=coverage, on_progress=lambda d, t: progress.append((d, t)))
+    assert out == ["料耗的問題"]
+    assert coverage.skipped == 1 and progress == [(1, 1)]
+
+    def cancelled(prompt: str) -> str:
+        raise refine.jobs.Cancelled()
+
+    try:
+        refine.Refiner(cancelled).refine(lines)
+        raise AssertionError("Cancelled must propagate, not be retried")
+    except refine.jobs.Cancelled:
+        pass
+
+
 def test_short_final_chunk_can_still_be_corrected() -> None:
     """One correction is a majority of a one-line chunk, and the transcript's last few lines
     always land in one. The restructuring guard needs a chunk to be about."""

@@ -15,9 +15,11 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
+from typing import Callable
 
 from opencc import OpenCC
 
+from . import jobs
 from .guards import accept
 from .store import Term
 
@@ -302,7 +304,8 @@ class Refiner:
 
     def refine(self, lines: list[Line], terms: list[Term] | None = None,
                rejected: list[Rejected] | None = None,
-               coverage: Coverage | None = None) -> list[str]:
+               coverage: Coverage | None = None,
+               on_progress: Callable[[int, int], None] | None = None) -> list[str]:
         """Correct a whole transcript, chunk by chunk. Returns one string per input line."""
         out: list[str] = []
         if coverage is not None:
@@ -313,11 +316,20 @@ class Refiner:
                        for l, t in zip(lines[max(0, start - CONTEXT_LINES) : start],
                                        out[max(0, start - CONTEXT_LINES) : start])]
             prompt = build_prompt(chunk, context, terms or [], self._topic)
-            try:
-                out += parse_response(self._chat(prompt), chunk, terms, rejected, coverage)
-            except Exception:
-                log.exception("refine failed at line %d, keeping originals", start)
-                if coverage is not None:
-                    coverage.skipped += len(chunk)
-                out += [l.text for l in chunk]
+            for attempt in (1, 2):
+                try:
+                    out += parse_response(self._chat(prompt), chunk, terms, rejected, coverage)
+                    break
+                except jobs.Cancelled:
+                    raise
+                except Exception:
+                    if attempt == 1:
+                        log.exception("refine failed at line %d, retrying once", start)
+                        continue
+                    log.exception("refine failed twice at line %d, keeping originals", start)
+                    if coverage is not None:
+                        coverage.skipped += len(chunk)
+                    out += [l.text for l in chunk]
+            if on_progress is not None:
+                on_progress(min(start + CHUNK_LINES, len(lines)), len(lines))
         return out

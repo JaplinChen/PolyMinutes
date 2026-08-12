@@ -136,6 +136,55 @@
   background: transparent;
 }
 
+/* Where the running pass is and how far it got — dismissed by finishing, not by the user. */
+.sess-page .sess-refine-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-sm);
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 0.82rem;
+}
+
+.sess-page .sess-refine-count {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+/* A finished pass that left lines behind: warning, not error — the transcript is usable, some of
+   it is just still raw ASR text. Carries the same reprocess button as the header. */
+.sess-page .sess-refine-skipped {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius-sm);
+  color: var(--warning);
+  font-size: 0.82rem;
+}
+
+/* Rows the pass has not reached yet: dimmed so the boundary between polished and raw text is
+   visible at a glance, plus a badge (below) naming why. */
+.sess-page .sess-line-pending {
+  opacity: 0.55;
+}
+
+.sess-page .sess-pending-badge {
+  display: inline-block;
+  margin-bottom: var(--space-1);
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
 .sess-page .sess-translation-missing {
   color: var(--text-muted);
   font-style: italic;

@@ -63,6 +63,7 @@ interface Props {
   newSpeakerCode: string; // next free S-code, for splitting the shared-mic collapse into a new voice
   langs: string[]; // every target language in this transcript, so rows render them in one order
   locked: boolean; // a refine pass is running; see the comment on `draftText`
+  pending: boolean; // the running pass has not reached this line yet — it still shows raw ASR text
   // Per row, not per transcript: a row that is handed "which line is playing" re-renders whenever
   // any other line starts playing, and there are 943 of them.
   draftText: string | null; // this row's edit in progress, or null when it is not being edited
@@ -78,14 +79,14 @@ interface Props {
   onReassign: (lineId: number, speaker: string) => void;
 }
 
-function Row({ line, speakerOptions, newSpeakerCode, langs, locked, draftText, isRerunning, rerunBlocked, isPlaying, playable, onDraft, onSave, onRerun, onRetranslate, onPlay, onReassign }: Props) {
+function Row({ line, speakerOptions, newSpeakerCode, langs, locked, pending, draftText, isRerunning, rerunBlocked, isPlaying, playable, onDraft, onSave, onRerun, onRetranslate, onPlay, onReassign }: Props) {
   const { t } = useTranslation();
   const editing = draftText === null ? null : { id: line.id, text: draftText };
   const [shown, setShown] = useState(false);
   const has = langs.some(l => line.translations[l]);
 
   return (
-    <article data-line-id={line.id} className={`sess-line${line.status === 'ok' ? '' : ' sess-line-failed'}`}>
+    <article data-line-id={line.id} className={`sess-line${line.status === 'ok' ? '' : ' sess-line-failed'}${pending ? ' sess-line-pending' : ''}`}>
       <div className="sess-time">
         {/* One button per line, but one <audio> for the whole transcript — 943 media elements is
             not a price worth paying for a control that plays one thing at a time. */}
@@ -120,6 +121,9 @@ function Row({ line, speakerOptions, newSpeakerCode, langs, locked, draftText, i
         <option value={newSpeakerCode}>{t('sessions.newSpeaker', { code: newSpeakerCode })}</option>
       </select>
       <div className="sess-body">
+        {/* Marked as well as dimmed: dimming alone reads as a rendering glitch, and the badge is
+            what says the raw unpunctuated text below is simply not done yet. */}
+        {pending && <span className="sess-pending-badge">{t('sessions.linePending')}</span>}
         {line.status !== 'ok' && (
           <div className="sess-status">
             <span className="sess-badge">
