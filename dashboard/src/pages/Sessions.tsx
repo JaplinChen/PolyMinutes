@@ -551,11 +551,10 @@ export function Sessions() {
   };
   // segment/refine walk the transcript in order, so `done` is a watermark: rows past it have not
   // been touched yet. Ids rather than indexes because the visible list may be search-filtered.
-  const pendingIds = useMemo(() => {
-    if (refine !== 'refining' || jobTotal <= 0) return null;
-    if (jobStage !== 'segment' && jobStage !== 'refine') return null;
-    return new Set(lines.slice(jobDone).map(l => l.id));
-  }, [refine, jobStage, jobDone, jobTotal, lines]);
+  const pendingIds =
+    refine === 'refining' && jobTotal > 0 && (jobStage === 'segment' || jobStage === 'refine')
+      ? new Set(lines.slice(jobDone).map(l => l.id))
+      : null;
   const refineLabel: Partial<Record<RefineState, string>> = {
     refining: t('sessions.refining'),
     refined: t('sessions.refined'),
