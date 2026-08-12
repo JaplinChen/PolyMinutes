@@ -628,6 +628,41 @@ def test_a_sample_never_runs_past_the_utterance_it_came_from(client: TestClient)
     assert len(heard) == main.CLIP_SECONDS * rate
 
 
+def test_a_sample_avoids_the_longest_line_and_plays_the_middle(client: TestClient) -> None:
+    """The longest line is the dirtiest sample: a line is long exactly when the segmenter missed a
+    speaker turn inside it. Prefer a mid-length utterance, and cut the clip from its middle — the
+    edges are where the other voice sits."""
+    import soundfile as sf
+
+    wav = config.RECORDINGS_DIR / "clean-sample.wav"
+    wav.parent.mkdir(parents=True, exist_ok=True)
+    # Nonzero audio only inside 18s–22s: the middle of the 10s–30s utterance. A clip cut from the
+    # head would read silence; only a centred cut reads ones.
+    audio = np.zeros(config.SAMPLE_RATE * 40, dtype="float32")
+    audio[config.SAMPLE_RATE * 18:config.SAMPLE_RATE * 22] = 1.0
+    sf.write(str(wav), audio, config.SAMPLE_RATE)
+
+    session = main.store.start_session("now", str(wav))
+    main.store.add_line(session, 0.0, "S1", "zh", "六十秒的超長句最可能藏著漏切的換手", {}, end_time=60.0)
+    main.store.add_line(session, 10.0, "S1", "zh", "二十秒的中等句比較乾淨", {}, end_time=30.0)
+    main.store.add_line(session, 31.0, "S1", "zh", "謝謝", {}, end_time=31.5)
+
+    # The 20s line wins over both the 60s monster and the sub-3s "謝謝".
+    assert main.store.session_speaker_sample(session, "S1") == (str(wav), 10.0, 20.0)
+
+    heard, rate = sf.read(io.BytesIO(client.get(f"/api/sessions/{session}/speakers/S1/clip").content))
+    assert len(heard) == main.CLIP_SECONDS * rate
+    assert float(np.abs(heard).mean()) > 0.9, "the clip must come from the utterance's middle"
+
+    # A line's own clip still plays from its start, whole: 10s–30s, capped at 60s elsewhere.
+    line_id = next(l["id"] for l in main.store.lines(session) if l["start"] == 10.0)
+    heard, rate = sf.read(io.BytesIO(client.get(f"/api/sessions/{session}/lines/{line_id}/clip").content))
+    assert len(heard) == 20.0 * rate, "a line clip is the whole line, not a centred slice"
+
+    main.store.delete_session(session)
+    wav.unlink(missing_ok=True)
+
+
 def test_a_learned_correction_can_be_fixed_in_place(client: TestClient) -> None:
     """Deleting and re-learning means reproducing the line it came from, which a typo rarely is."""
     session = seed_session("editable.wav")
