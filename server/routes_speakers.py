@@ -8,7 +8,7 @@ import numpy as np
 import soundfile as sf
 from fastapi import APIRouter, HTTPException, Response
 
-from . import config, main
+from . import config, main, speakers
 
 router = APIRouter()
 
@@ -99,6 +99,49 @@ def merge_speakers(session_id: int, body: dict) -> dict:
     # refine followup, because a click must not wait on a model.
     main.postmeeting._segment_stage(main.store, session_id, None)
     return {"lines": main.store.lines(session_id), "speakers": main.store.speaker_names(session_id)}
+
+
+# A resemblance worth mentioning, well under the bar for saying it outright. Between the two, the
+# match is a hint for a human holding the audio; below the floor it is noise that would teach
+# people to ignore the hints.
+SUGGEST_FLOOR = 0.45
+
+
+@router.get("/api/sessions/{session_id}/speakers/suggestions")
+def speaker_suggestions(session_id: int) -> dict:
+    """Who each unnamed code sounds most like, for the naming screen.
+
+    The post-meeting pass names a code only when the best match clears KNOWN_SPEAKER_THRESHOLD —
+    right for writing a name into a transcript nobody would think to check, but the near-misses it
+    throws away are exactly what the naming screen needs: a person with the audio in their ears can
+    verify a 0.5 hint that the pass rightly refused to assert. Codes without a stored voiceprint —
+    fragments too short to embed — get no suggestion; they are merge fodder, not naming candidates.
+    """
+    if not main.store.session(session_id):
+        raise HTTPException(404, "no such session")
+    known = main.store.known_voiceprints()
+    if not known:
+        return {}
+    names = main.store.speaker_names(session_id)
+    out: dict[str, dict] = {}
+    for code in {l["speaker"] for l in main.store.lines(session_id)}:
+        if names.get(code, "").strip():
+            continue
+        stored = main.store.voiceprint(session_id, code)
+        if stored is None:
+            continue
+        emb = np.frombuffer(stored, dtype=np.float32)
+        best_name, best = "", 0.0
+        for name, print_ in known:
+            candidate = np.frombuffer(print_, dtype=np.float32)
+            if candidate.shape != emb.shape:
+                continue
+            score = speakers._cosine(emb, candidate)
+            if score > best:
+                best, best_name = score, name
+        if best_name and best >= SUGGEST_FLOOR:
+            out[code] = {"name": best_name, "similarity": round(best, 2)}
+    return out
 
 
 @router.get("/api/speakers/known")

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
-import { Download, FileText, Link as LinkIcon, RefreshCw, Search, Trash2, Upload } from 'lucide-react';
+import { Download, FileText, Link as LinkIcon, RefreshCw, Search, Trash2, Upload, Volume2 } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { PageSkeleton } from '../components/PageSkeleton';
 import { TranscriptRow } from '../components/sessions/TranscriptRow';
@@ -41,6 +41,8 @@ export function Sessions() {
   const [names, setNames] = useState<Record<string, string>>({});
   // Codes ticked on the speaker page to fold into one person — the diariser splits a drifting voice.
   const [mergeSel, setMergeSel] = useState<Set<string>>(new Set());
+  // Who each unnamed code sounds most like — the hint the naming screen never had.
+  const [suggestions, setSuggestions] = useState<Record<string, { name: string; similarity: number }>>({});
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<{ id: number; text: string } | null>(null);
   const [importing, setImporting] = useState(false);
@@ -145,6 +147,13 @@ export function Sessions() {
   useEffect(() => {
     if (selected !== null) loadLines(selected);
   }, [selected, loadLines]);
+
+  // Refetched whenever the transcript changes: a merge or a reprocess redraws the codes, and a
+  // suggestion for a code that no longer exists is worse than none.
+  useEffect(() => {
+    if (selected === null) { setSuggestions({}); return; }
+    appApi.speakerSuggestions(selected).then(setSuggestions).catch(() => setSuggestions({}));
+  }, [selected, lines]);
 
   // Once the lines for a cited session are on screen, scroll the cited one into view and flash it,
   // so following a citation lands on the exact utterance rather than the top of a 943-line list.
@@ -715,6 +724,31 @@ export function Sessions() {
                     onChange={e => setNames(prev => ({ ...prev, [code]: e.target.value }))}
                     onBlur={e => saveName(code, e.target.value)}
                   />
+                  {!(names[code] ?? '').trim() && suggestions[code] && (
+                    <span className="sess-suggest">
+                      <button
+                        type="button"
+                        className="sess-suggest-apply"
+                        title={t('sessions.suggestApplyHint')}
+                        onClick={() => saveName(code, suggestions[code].name)}
+                      >
+                        {t('sessions.suggestLabel', {
+                          name: suggestions[code].name,
+                          pct: Math.round(suggestions[code].similarity * 100),
+                        })}
+                      </button>
+                      <button
+                        type="button"
+                        className="sess-suggest-play"
+                        title={t('sessions.suggestPlayHint', { name: suggestions[code].name })}
+                        onClick={() => {
+                          new Audio(`${API_BASE_URL}/speakers/known/${encodeURIComponent(suggestions[code].name)}/clip`).play().catch(() => {});
+                        }}
+                      >
+                        <Volume2 size={14} />
+                      </button>
+                    </span>
+                  )}
                 </label>
                 {/* preload="none" because a meeting can have 35 of these and none of them is
                     wanted until someone clicks. Omitted entirely when the recording is gone —
