@@ -145,6 +145,10 @@
 .learned-page .learned-clip {
   height: 32px;
   max-width: 240px;
+  /* The player yields first in a flex row: without a floor the reassign select's intrinsic
+     width (the longest speaker name) squeezed it to 0px and the row showed no player at all. */
+  flex: 1 1 auto;
+  min-width: 160px;
 }
 
 .learned-page .learned-clip-row {
@@ -154,7 +158,10 @@
 }
 
 .learned-page .learned-clip-reassign {
+  /* Fixed width, not intrinsic: sized to its longest option it starves the audio player.
+     The dropdown list still renders every name in full. */
   flex: 0 0 auto;
+  width: 88px;
   padding: 2px 4px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
