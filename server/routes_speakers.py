@@ -61,6 +61,31 @@ def _derive_voiceprint(session_id: int, code: str) -> bytes | None:
     return centroid
 
 
+def refresh_voiceprint(session_id: int, code: str) -> None:
+    """Re-derive a code's print after its lines changed, and correct what the stale one taught.
+
+    Splitting a collapsed speaker or merging fragments changes which audio a code stands for, but
+    its stored voiceprint kept describing the old mix — and if the code was named, that polluted
+    print was already learned and would misname people next meeting. The stale learned variant is
+    unlearned and the fresh one learned in its place. When derivation cannot run (no wav, no line
+    long enough) the old print is left alone: a slightly stale print beats none.
+    """
+    old = main.store.voiceprint(session_id, code)
+    name = main.store.speaker_names(session_id).get(code, "").strip()
+    if not any(l["speaker"] == code for l in main.store.lines(session_id)):
+        main.store.delete_voiceprint(session_id, code)
+        if name and old:
+            main.store.unlearn_speaker(name, old)
+        return
+    fresh = _derive_voiceprint(session_id, code)
+    if fresh is None:
+        return
+    if name:
+        if old:
+            main.store.unlearn_speaker(name, old)
+        main.store.remember_speaker(name, fresh)
+
+
 @router.put("/api/sessions/{session_id}/speakers")
 def put_speaker_names(session_id: int, body: dict) -> dict:
     previous = main.store.speaker_names(session_id)
@@ -98,6 +123,10 @@ def merge_speakers(session_id: int, body: dict) -> dict:
     # can finally reach them. Arithmetic only (chat=None): the LLM punctuation pass stays in the
     # refine followup, because a click must not wait on a model.
     main.postmeeting._segment_stage(main.store, session_id, None)
+    # The kept code now stands for more audio and the absorbed ones for none; their prints follow.
+    refresh_voiceprint(session_id, into)
+    for code in sources:
+        refresh_voiceprint(session_id, code)
     return {"lines": main.store.lines(session_id), "speakers": main.store.speaker_names(session_id)}
 
 

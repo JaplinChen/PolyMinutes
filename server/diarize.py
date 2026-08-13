@@ -420,23 +420,44 @@ class Diarizer:
             # Running mean: later segments refine the centroid without a stored history.
             n = best.segments
             best.centroid = (best.centroid * n + emb) / (n + 1)
+            # One more shot at naming, on the refined centroid: the first attempt ran on a single
+            # utterance, and an atypical opening sentence should not cost the whole meeting.
+            if best.code not in self.recognised \
+                    and best.segments + 1 == config.RECOGNISE_RECHECK_SEGMENTS:
+                if name := self._recognise(best.centroid):
+                    self.recognised[best.code] = name
 
         best.segments += 1
         self._last_by_source[source] = best.code
         return best
 
-    def _recognise(self, emb: np.ndarray) -> str:
-        """Name a freshly minted speaker if a known voiceprint is close enough.
+    def recognise(self, emb: np.ndarray) -> tuple[str, float]:
+        """Best-matching known name and its score — '' when nothing is sure enough to assert.
 
         Held to a higher bar than in-meeting clustering. Merging two segments of one meeting wrongly
         costs a split transcript; putting last week's name on this week's stranger is a mistake
-        nobody reading the transcript would think to check.
+        nobody reading the transcript would think to check. Two bars, both required: the winner must
+        clear KNOWN_SPEAKER_THRESHOLD, and must beat the best *other person* by RECOGNISE_MARGIN —
+        a per-person score is the max over up to 8 stored variants, and a hair's-breadth win
+        between two similar voices decides nothing.
         """
-        best, score = "", -1.0
+        by_name: dict[str, float] = {}
         for name, centroid in self._known:
-            if (s := cosine(emb, centroid)) > score:
-                best, score = name, s
-        return best if score >= config.KNOWN_SPEAKER_THRESHOLD else ""
+            s = cosine(emb, centroid)
+            if s > by_name.get(name, -1.0):
+                by_name[name] = s
+        if not by_name:
+            return "", 0.0
+        ranked = sorted(by_name.items(), key=lambda kv: -kv[1])
+        best, score = ranked[0]
+        if score < config.KNOWN_SPEAKER_THRESHOLD:
+            return "", score
+        if len(ranked) > 1 and score - ranked[1][1] < config.RECOGNISE_MARGIN:
+            return "", score
+        return best, score
+
+    def _recognise(self, emb: np.ndarray) -> str:
+        return self.recognise(emb)[0]
 
     def language_for(self, speaker: Speaker) -> str:
         """Language to force on this speaker's next utterance. '' means let Whisper auto-detect."""

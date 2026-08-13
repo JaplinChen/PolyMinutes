@@ -100,6 +100,12 @@ def put_line_speaker(session_id: int, line_id: int, body: dict) -> dict:
         raise HTTPException(404, "no such line in this session")
 
     main.store.set_line_speaker(line_id, speaker)
+    # Both codes now stand for different audio than their stored prints describe — the donor lost
+    # a line that was polluting its centroid, the receiver gained one. Re-derive both, so a named
+    # code's learned print is corrected rather than left to misname people next meeting.
+    from . import routes_speakers
+    routes_speakers.refresh_voiceprint(session_id, before["speaker"])
+    routes_speakers.refresh_voiceprint(session_id, speaker)
     return {"lines": main.store.lines(session_id), "speakers": main.store.speaker_names(session_id)}
 
 

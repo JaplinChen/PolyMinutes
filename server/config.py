@@ -84,6 +84,19 @@ CONTEXT_LINES = 3
 # Kept equal to SPEAKER_THRESHOLD until a recording exists where clustering works and a known
 # person appears twice.
 KNOWN_SPEAKER_THRESHOLD = 0.65
+# Above this, a recognition is trusted enough to feed back into learning: the matched centroid is
+# stored as a new variant, so a voice that drifts (mic, cold, years) keeps refreshing its own
+# prints without anyone renaming it. A notch above the assertion bar because a wrong auto-learned
+# print compounds — it pulls the next meeting's match further off.
+AUTO_LEARN_THRESHOLD = 0.75
+# When the two best-matching *people* score within this of each other, no name is asserted — the
+# match goes to the suggestions endpoint for a human with the audio instead. With up to 8 variants
+# per person competing, a hair's-breadth win between two similar voices is noise, not identity.
+RECOGNISE_MARGIN = 0.05
+# Segments a live speaker accumulates before recognition is retried on the refined centroid. The
+# first attempt runs on one utterance's embedding; an atypical opening sentence should not cost
+# the whole meeting.
+RECOGNISE_RECHECK_SEGMENTS = 5
 
 
 @dataclass

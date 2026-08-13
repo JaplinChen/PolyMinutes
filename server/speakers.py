@@ -100,6 +100,14 @@ class SpeakerStore:
             )
             self._db.commit()
 
+    def delete_voiceprint(self, session_id: int, code: str) -> None:
+        """Drop a code's stored print — for a code that no longer labels any line after a merge or
+        reassign, whose print would otherwise keep describing a voice the meeting no longer has."""
+        with self._lock:
+            self._db.execute("DELETE FROM voiceprint WHERE session_id=? AND code=?",
+                             (session_id, code))
+            self._db.commit()
+
     def voiceprint(self, session_id: int, code: str) -> bytes | None:
         with self._lock:
             row = self._db.execute(

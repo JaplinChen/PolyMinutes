@@ -77,6 +77,46 @@ def test_known_voice_is_named_on_sight() -> None:
     assert d._recognise(vincent) == ""
 
 
+def test_two_similar_known_voices_yield_no_name_only_a_suggestion() -> None:
+    """When the two best-matching people score within RECOGNISE_MARGIN, asserting either is a coin
+    flip dressed as identity — the match belongs on the suggestions endpoint, not in the transcript."""
+    a = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+    b = np.array([0.9, 0.436, 0.0], dtype=np.float32)  # cos(a, b) ≈ 0.9
+    d = diarize.Diarizer.__new__(diarize.Diarizer)
+    d._known = [("甲", a), ("乙", b)]
+
+    # Clearly A's voice: A scores 1.0, B ~0.9 — the margin holds, the name is asserted.
+    assert d._recognise(a) == "甲"
+    # Halfway between them: both score high, neither wins by enough.
+    mid = (a + b).astype(np.float32)
+    name, score = d.recognise(mid)
+    assert name == "" and score >= config.KNOWN_SPEAKER_THRESHOLD
+    # Several variants of one person are not rivals: the margin only applies across names.
+    d._known = [("甲", a), ("甲", b)]
+    assert d._recognise(mid) == "甲"
+
+
+def test_recognition_is_retried_once_the_centroid_settles() -> None:
+    """An atypical opening sentence must not cost the whole meeting: the first recognition runs on
+    one utterance's embedding, so a second attempt runs when the running mean has segments in it."""
+    v = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
+    d = _diarizer(config.Config())
+    d._threshold = -2.0  # everything clusters into the one speaker; this test is about recognition
+    d._known = [("Vincent", v)]
+    opener = np.array([0.0, 1.0, 0.0, 0.0], dtype=np.float32)
+    embeddings = [opener] + [v] * 6
+    d.embed = lambda samples: embeddings.pop(0)
+
+    clip = np.zeros(config.SAMPLE_RATE * 2, dtype=np.float32)
+    d.assign(clip)
+    assert d.recognised == {}, "the atypical opener must not be recognised"
+    for _ in range(config.RECOGNISE_RECHECK_SEGMENTS - 2):
+        d.assign(clip)
+    assert d.recognised == {}, "no retry before the centroid has settled"
+    d.assign(clip)
+    assert d.recognised == {"S1": "Vincent"}, "the refined centroid names the voice"
+
+
 def test_cosine() -> None:
     a = np.array([1.0, 0.0, 0.0], dtype=np.float32)
     assert abs(diarize.cosine(a, a) - 1.0) < 1e-6
@@ -456,8 +496,8 @@ def test_an_imported_recording_leaves_a_voiceprint_behind() -> None:
             # Length stands in for identity, so the averaged centroid is checkable.
             return np.full(4, len(samples) / config.SAMPLE_RATE, dtype=np.float32)
 
-        def _recognise(self, emb: np.ndarray) -> str:
-            return ""  # no learned voices in this fixture
+        def recognise(self, emb: np.ndarray) -> tuple[str, float]:
+            return "", 0.0  # no learned voices in this fixture
 
     said = [postprocess.Utterance(0.0, np.zeros(config.SAMPLE_RATE * 4, dtype=np.float32), "S1"),
             postprocess.Utterance(5.0, np.zeros(config.SAMPLE_RATE * 2, dtype=np.float32), "S1"),
@@ -493,9 +533,10 @@ def test_reprocess_puts_learned_names_back_on_the_new_codes() -> None:
             # Length stands in for identity, so the centroid is a known value per speaker.
             return np.full(4, len(samples) / config.SAMPLE_RATE, dtype=np.float32)
 
-        def _recognise(self, emb: np.ndarray) -> str:
+        def recognise(self, emb: np.ndarray) -> tuple[str, float]:
             # The four-second voice is the one the room knows; the six-second one is a stranger.
-            return "廖仁成" if abs(float(emb[0]) - 4.0) < 0.01 else ""
+            # Below AUTO_LEARN_THRESHOLD so this fixture asserts naming without learning.
+            return ("廖仁成", 0.7) if abs(float(emb[0]) - 4.0) < 0.01 else ("", 0.0)
 
     said = [postprocess.Utterance(0.0, np.zeros(config.SAMPLE_RATE * 4, dtype=np.float32), "S1"),
             postprocess.Utterance(9.0, np.zeros(config.SAMPLE_RATE * 6, dtype=np.float32), "S2")]
@@ -504,6 +545,73 @@ def test_reprocess_puts_learned_names_back_on_the_new_codes() -> None:
 
     assert recognised == {"S1": "廖仁成"}, recognised
     assert sorted(store.saved) == ["S1", "S2"], "both voices are still learned, named or not"
+
+
+def test_a_confident_recognition_feeds_back_into_learning() -> None:
+    """A match above AUTO_LEARN_THRESHOLD is labelled data nobody typed: the meeting's print joins
+    the name's variants, so a drifting voice keeps refreshing itself. Below it, nothing is stored —
+    a wrong auto-learned print compounds."""
+    class FakeStore:
+        def __init__(self) -> None:
+            self.saved: dict[str, bytes] = {}
+            self.learned: list[str] = []
+
+        def save_voiceprint(self, session_id: int, code: str, centroid: bytes) -> None:
+            self.saved[code] = centroid
+
+        def remember_speaker(self, name: str, centroid: bytes) -> None:
+            self.learned.append(name)
+
+    class FakeDiarizer:
+        def embed(self, samples: np.ndarray) -> np.ndarray:
+            return np.full(4, len(samples) / config.SAMPLE_RATE, dtype=np.float32)
+
+        def recognise(self, emb: np.ndarray) -> tuple[str, float]:
+            # The four-second voice is a confident match; the six-second one a hesitant one.
+            if abs(float(emb[0]) - 4.0) < 0.01:
+                return "廖仁成", config.AUTO_LEARN_THRESHOLD + 0.05
+            return "曾俊達", config.AUTO_LEARN_THRESHOLD - 0.05
+
+    said = [postprocess.Utterance(0.0, np.zeros(config.SAMPLE_RATE * 4, dtype=np.float32), "S1"),
+            postprocess.Utterance(9.0, np.zeros(config.SAMPLE_RATE * 6, dtype=np.float32), "S2")]
+    store = FakeStore()
+    recognised = postprocess._remember_voices(store, 1, said, FakeDiarizer())
+
+    assert recognised == {"S1": "廖仁成", "S2": "曾俊達"}, "both are named"
+    assert store.learned == ["廖仁成"], "only the confident match is learned"
+
+
+def test_voiceprint_samples_avoid_speaker_boundary_lines() -> None:
+    """The longest utterance is adversely selected — long exactly when the segmenter missed a turn
+    inside it — so the centroid prefers mid-monologue pieces near the ideal length (#145/#146)."""
+    class FakeStore:
+        def __init__(self) -> None:
+            self.saved: dict[str, bytes] = {}
+
+        def save_voiceprint(self, session_id: int, code: str, centroid: bytes) -> None:
+            self.saved[code] = centroid
+
+    class FakeEmbedder:
+        def embed(self, samples: np.ndarray) -> np.ndarray:
+            return np.full(4, len(samples) / config.SAMPLE_RATE, dtype=np.float32)
+
+        def recognise(self, emb: np.ndarray) -> tuple[str, float]:
+            return "", 0.0
+
+    def u(speaker: str, seconds: float) -> postprocess.Utterance:
+        return postprocess.Utterance(0.0, np.zeros(int(config.SAMPLE_RATE * seconds),
+                                                   dtype=np.float32), speaker)
+
+    # S1's 8-second line sits right after S2 — the old longest-first rule would have led with it.
+    said = [u("S2", 2.0), u("S1", 8.0), u("S1", 2.0), u("S1", 3.0), u("S1", 4.0), u("S1", 5.0),
+            u("S1", 7.0), u("S2", 2.0)]
+    store = FakeStore()
+    postprocess._remember_voices(store, 1, said, FakeEmbedder())
+
+    # Four mid-monologue pieces first, then the boundary piece closest to ideal (the 8s one);
+    # the 7-second boundary line at the S2 handover is the one left out.
+    expected = (2.0 + 3.0 + 4.0 + 5.0 + 8.0) / 5
+    assert np.allclose(np.frombuffer(store.saved["S1"], dtype=np.float32), expected)
 
 
 def test_a_voiceprint_averages_only_a_speakers_longest_few() -> None:
@@ -516,8 +624,8 @@ def test_a_voiceprint_averages_only_a_speakers_longest_few() -> None:
             self.calls += 1
             return np.ones(4, dtype=np.float32)
 
-        def _recognise(self, emb: np.ndarray) -> str:
-            return ""
+        def recognise(self, emb: np.ndarray) -> tuple[str, float]:
+            return "", 0.0
 
     class Sink:
         def save_voiceprint(self, session_id: int, code: str, centroid: bytes) -> None:
