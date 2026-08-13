@@ -19,14 +19,22 @@ export interface KnownSpeaker {
   language: string;
   /** Department this person belongs to; '' when unset. Fed to the summary for stance. */
   department: string;
-  /** Playable samples, newest first: session ids of meetings this voice can be heard in. */
-  clip_sessions: number[];
+  /** Playable samples, newest first. `started`/`text` are null when the source meeting was deleted. */
+  clip_sessions: SpeakerClip[];
+}
+
+export interface SpeakerClip {
+  session: number;
+  started: string | null;
+  text: string | null;
 }
 
 /** What the recogniser wrote against what was actually said, learned from an edit. */
 export interface LearnedCorrection {
   wrong: string;
   right: string;
+  /** How many times this correction has been applied to transcripts. */
+  count: number;
 }
 
 export interface AppConfig {
@@ -234,7 +242,7 @@ export const appApi = {
     }),
   corrections: () => request<LearnedCorrection[]>('/corrections'),
   // `wrong` is the key, so sending a different one renames the pair rather than adding another.
-  editCorrection: (wrong: string, next: LearnedCorrection) =>
+  editCorrection: (wrong: string, next: Pick<LearnedCorrection, 'wrong' | 'right'>) =>
     request<LearnedCorrection[]>(`/corrections/${encodeURIComponent(wrong)}`, {
       method: 'PUT',
       body: JSON.stringify(next),

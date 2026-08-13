@@ -310,7 +310,15 @@
     "sessions": "meetings: {{count}}",
     "edit": "Edit this correction",
     "editWrong": "What it was misheard as",
-    "editRight": "What was actually said"
+    "editRight": "What was actually said",
+    "confirmForget": "Forget \"{{name}}\"? The voiceprint and all samples will be deleted with it.",
+    "confirmDeleteClip": "Delete this sample? The naming from that meeting and the voiceprint learned from it are revoked with it.",
+    "deletedMeeting": "Deleted meeting",
+    "searchCorrections": "Search corrections…",
+    "appliedCount": "Applied {{count}} times",
+    "reassignNew": "New name…",
+    "newSpeakerName": "Enter the speaker's name",
+    "nameTaken": "A speaker named {{name}} already exists"
   },
   "ask": {
     "title": "Ask",

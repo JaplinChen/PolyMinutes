@@ -398,10 +398,20 @@ def test_deleting_a_sample_undoes_what_that_meeting_taught(client: TestClient) -
     assert (NAME, v_good) in prints, prints             # the other meeting's variant survives
     assert main.store.stored_clip(NAME, bad) is None    # the harvested clip is gone
     assert main.store.speaker_clip_sources(NAME) == [(old, False)]
+    # A live sample carries when its meeting ran and what the picked line says.
+    row = next(s for s in r.json() if s["name"] == NAME)
+    assert row["clip_sessions"] == [
+        {"session": old, "started": "2026-05-01T09:00:00", "text": "好樣本的一句話"}]
 
     assert client.delete(f"/api/speakers/known/{NAME}/clip",
                          params={"session": 999999}).status_code == 404
-    client.delete(f"/api/speakers/known/{NAME}")
+
+    # Withdrawing the last sample forgets the voice outright: gone from the page, and no orphan
+    # print left recognising people with nowhere to remove it from.
+    assert client.delete(f"/api/speakers/known/{NAME}/clip",
+                         params={"session": old}).status_code == 200
+    assert NAME not in {s["name"] for s in client.get("/api/speakers/known").json()}
+    assert not [n for n, _ in main.store.known_voiceprints() if n == NAME]
 
 
 def test_reassigning_a_sample_hands_the_meeting_to_the_right_name(client: TestClient) -> None:
@@ -472,7 +482,11 @@ def test_editing_a_line_teaches_the_correction(client: TestClient) -> None:
     r = client.put(f"/api/sessions/{session}/lines/{line}", json={"source": "那個生管會上系統"})
     assert r.status_code == 200, r.text
     assert r.json()["lines"][0]["source"] == "那個生管會上系統"
-    assert {c["wrong"]: c["right"] for c in client.get("/api/corrections").json()} == {"申管": "生管"}
+    learned = client.get("/api/corrections").json()
+    assert [(c["wrong"], c["right"]) for c in learned] == [("申管", "生管")]
+    # How often the pair was taught rides along. 2, not 1: the retranslate check (alphabetically
+    # earlier, shared store) already taught the same pair once by editing 申管會 to 生管會.
+    assert learned[0]["count"] == 2
 
     # What was learned is applied to text the recogniser has not seen yet.
     from . import correct as correct_mod

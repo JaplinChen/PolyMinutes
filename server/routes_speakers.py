@@ -173,6 +173,19 @@ def speaker_suggestions(session_id: int) -> dict:
     return out
 
 
+def _clip_entry(name: str, sid: int, stored: bool) -> dict:
+    """One sample as the Learned page shows it: which meeting, when it ran, what the line says.
+
+    A bare session id identifies nothing a human recognises — the date and the picked line's text
+    are what let someone decide which sample to play. A harvested clip's meeting is deleted, so
+    both are null there; the session id still keys the audio URL either way.
+    """
+    if stored:
+        return {"session": sid, "started": None, "text": None}
+    info = main.store.speaker_sample_info(name, sid)
+    return {"session": sid, "started": info[0] if info else None, "text": info[1] if info else None}
+
+
 @router.get("/api/speakers/known")
 def get_known_speakers() -> list[dict]:
     counts = main.store.speaker_sessions()
@@ -182,9 +195,11 @@ def get_known_speakers() -> list[dict]:
              "department": depts.get(name, ""),
              # The meetings this voice can still be heard from (newest first) — live wavs plus
              # clips harvested from deleted meetings, which is what the Learned page renders
-             # players for. Session ids rather than a count: a positional index shifts when a
-             # sample is deleted, and the browser then replays the old audio for the same URL.
-             "clip_sessions": [sid for sid, _ in main.store.speaker_clip_sources(name)]}
+             # players for. Keyed by session id rather than position: a positional index shifts
+             # when a sample is deleted, and the browser then replays the old audio for the
+             # same URL.
+             "clip_sessions": [_clip_entry(name, sid, stored)
+                               for sid, stored in main.store.speaker_clip_sources(name)]}
             for name, _ in main.store.known_speakers()]
 
 
@@ -283,6 +298,10 @@ def delete_known_speaker_clip(name: str, session: int) -> list[dict]:
     naming and unlearns what it taught, then removes the harvested clip. For a meeting already
     deleted (stored clip), codes and voiceprints are gone with the session, so the loops are
     naturally empty and only the clip row goes.
+
+    Withdrawing the last sample forgets the voice outright: with the evidence gone the name
+    disappears from the Learned page, but its prints would keep recognising people with no page
+    left to unteach them from — an orphan voiceprint nobody can see or remove.
     """
     _clip_source(name, session)
     for code in main.store.session_codes_for(name, session):
@@ -290,6 +309,8 @@ def delete_known_speaker_clip(name: str, session: int) -> list[dict]:
             main.store.unlearn_speaker(name, old)
     main.store.unname_speaker(session, name)
     main.store.delete_speaker_clip(name, session)
+    if not main.store.speaker_clip_sources(name):
+        main.store.forget_speaker(name)
     return get_known_speakers()
 
 

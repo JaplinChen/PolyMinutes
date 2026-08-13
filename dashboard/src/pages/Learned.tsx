@@ -5,7 +5,7 @@ import { PageHeader } from '../components/PageHeader';
 import { PageSkeleton } from '../components/PageSkeleton';
 import { useToast } from '../components/Toast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
-import { appApi, type KnownSpeaker, type LearnedCorrection } from '../services/app.api';
+import { appApi, type KnownSpeaker, type LearnedCorrection, type SpeakerClip } from '../services/app.api';
 import { API_BASE_URL } from '../services/http';
 import './Learned.css';
 
@@ -27,70 +27,92 @@ export function Learned() {
   const [corrections, setCorrections] = useState<LearnedCorrection[]>([]);
   const [langs, setLangs] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
+  // The name (or correction key) of the row whose request is in flight; null when idle. Every
+  // control still locks while any request runs — the value only says where to show the feedback.
+  const [busy, setBusy] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [editingPair, setEditingPair] = useState<string | null>(null);
   const [pair, setPair] = useState({ wrong: '', right: '' });
+  const [search, setSearch] = useState('');
 
   const fail = (err: unknown) => toast.error(err instanceof Error ? err.message : String(err));
 
   useEffect(() => {
     let alive = true;
-    Promise.all([appApi.knownSpeakers(), appApi.corrections(), appApi.getConfig()])
-      .then(([voices, fixes, cfg]) => {
-        if (!alive) return;
-        setSpeakers(voices);
-        setCorrections(fixes);
-        setLangs(cfg.languages);
-      })
-      .catch(err => alive && fail(err))
-      .finally(() => alive && setLoading(false));
+    const load = (initial: boolean) => {
+      Promise.all([appApi.knownSpeakers(), appApi.corrections(), appApi.getConfig()])
+        .then(([voices, fixes, cfg]) => {
+          if (!alive) return;
+          setSpeakers(voices);
+          setCorrections(fixes);
+          setLangs(cfg.languages);
+        })
+        .catch(err => alive && fail(err))
+        .finally(() => initial && alive && setLoading(false));
+    };
+    load(true);
+    // Names and voiceprints change from the transcript pages too; refetch on return so the page
+    // never shows a speaker deleted or renamed elsewhere.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') load(false);
+    };
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       alive = false;
+      document.removeEventListener('visibilitychange', onVisible);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const forgetSpeaker = async (name: string) => {
-    setBusy(true);
-    try {
-      setSpeakers(await appApi.forgetSpeaker(name));
-    } catch (err) {
-      fail(err);
-    } finally {
-      setBusy(false);
-    }
-  };
 
   // The server orders speakers by meeting count, and deleting or reassigning a sample changes
   // the counts — re-sorting mid-edit would yank the row out from under the cursor. Responses
-  // keep the order already on screen; names not shown yet append at the end.
-  const stableOrder = (prev: KnownSpeaker[], next: KnownSpeaker[]) => {
+  // keep the order already on screen; names not shown yet append at the end. A rename passes
+  // the {from, to} mapping so the renamed row keeps the old name's position.
+  const stableOrder = (prev: KnownSpeaker[], next: KnownSpeaker[], renamed?: { from: string; to: string }) => {
     const pos = new Map(prev.map((s, i) => [s.name, i]));
-    return [...next].sort((a, b) => (pos.get(a.name) ?? prev.length) - (pos.get(b.name) ?? prev.length));
+    const at = (name: string) =>
+      pos.get(name) ?? (renamed && name === renamed.to ? pos.get(renamed.from) : undefined) ?? prev.length;
+    return [...next].sort((a, b) => at(a.name) - at(b.name));
+  };
+
+  const forgetSpeaker = async (name: string) => {
+    if (!window.confirm(t('learned.confirmForget', { name }))) return;
+    setBusy(name);
+    try {
+      const next = await appApi.forgetSpeaker(name);
+      setSpeakers(prev => stableOrder(prev, next));
+    } catch (err) {
+      fail(err);
+    } finally {
+      setBusy(null);
+    }
   };
 
   const deleteClip = async (name: string, session: number) => {
-    setBusy(true);
+    if (!window.confirm(t('learned.confirmDeleteClip'))) return;
+    setBusy(name);
     try {
+      // Deleting a speaker's last sample forgets the speaker entirely: the row simply
+      // disappears from the response, which stableOrder handles as a matter of course.
       const next = await appApi.deleteSpeakerClip(name, session);
       setSpeakers(prev => stableOrder(prev, next));
     } catch (err) {
       fail(err);
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
 
   const reassignClip = async (name: string, session: number, target: string) => {
-    setBusy(true);
+    setBusy(name);
     try {
       const next = await appApi.reassignSpeakerClip(name, session, target);
       setSpeakers(prev => stableOrder(prev, next));
     } catch (err) {
       fail(err);
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
 
@@ -99,24 +121,26 @@ export function Learned() {
   const saveDepartment = async (name: string, current: string) => {
     const next = (deptDrafts[name] ?? current).trim();
     if (next === current) return;
-    setBusy(true);
+    setBusy(name);
     try {
-      setSpeakers(await appApi.setSpeakerDepartment(name, next));
+      const res = await appApi.setSpeakerDepartment(name, next);
+      setSpeakers(prev => stableOrder(prev, res));
     } catch (err) {
       fail(err);
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
 
   const setLanguage = async (name: string, language: string) => {
-    setBusy(true);
+    setBusy(name);
     try {
-      setSpeakers(await appApi.setSpeakerLanguage(name, language));
+      const next = await appApi.setSpeakerLanguage(name, language);
+      setSpeakers(prev => stableOrder(prev, next));
     } catch (err) {
       fail(err);
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
 
@@ -124,13 +148,21 @@ export function Learned() {
     const next = draft.trim();
     setEditing(null);
     if (!next || next === name) return;
-    setBusy(true);
+    setBusy(name);
     try {
-      setSpeakers(await appApi.renameSpeaker(name, next));
+      const res = await appApi.renameSpeaker(name, next);
+      setSpeakers(prev => stableOrder(prev, res, { from: name, to: next }));
     } catch (err) {
-      fail(err);
+      if (err instanceof Error && err.message.includes('already exists')) {
+        toast.error(t('learned.nameTaken', { name: next }));
+      } else {
+        fail(err);
+      }
+      // Reopen the box with what was typed, so a failure does not cost the whole name again.
+      setEditing(name);
+      setDraft(next);
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
 
@@ -139,26 +171,34 @@ export function Learned() {
   const saveCorrection = async (original: string) => {
     setEditingPair(null);
     if (pair.wrong.trim() === original && pair.right.trim() === corrections.find(c => c.wrong === original)?.right) return;
-    setBusy(true);
+    setBusy(original);
     try {
       setCorrections(await appApi.editCorrection(original, { wrong: pair.wrong.trim(), right: pair.right.trim() }));
     } catch (err) {
       fail(err);
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
 
   const forgetCorrection = async (wrong: string) => {
-    setBusy(true);
+    setBusy(wrong);
     try {
       setCorrections(await appApi.forgetCorrection(wrong));
     } catch (err) {
       fail(err);
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
+
+  const clipLabel = (clip: SpeakerClip) =>
+    clip.started === null ? t('learned.deletedMeeting') : `${clip.started.slice(0, 10)}・${clip.text ?? ''}`;
+
+  const query = search.trim().toLowerCase();
+  const visibleCorrections = query
+    ? corrections.filter(c => c.wrong.toLowerCase().includes(query) || c.right.toLowerCase().includes(query))
+    : corrections;
 
   if (loading) {
     return <PageSkeleton />;
@@ -197,7 +237,7 @@ export function Learned() {
         ) : (
           <ul className="learned-list">
             {speakers.map(s => (
-              <li key={s.name} className="learned-row">
+              <li key={s.name} className={`learned-row${busy === s.name ? ' busy' : ''}`}>
                 {editing === s.name ? (
                   <input
                     className="learned-rename"
@@ -229,7 +269,7 @@ export function Learned() {
                   placeholder={t('learned.department')}
                   aria-label={t('learned.department')}
                   title={t('learned.department')}
-                  disabled={busy}
+                  disabled={busy !== null}
                   onChange={e => setDeptDrafts(d => ({ ...d, [s.name]: e.target.value }))}
                   onBlur={() => saveDepartment(s.name, s.department)}
                   onKeyDown={e => e.key === 'Enter' && e.currentTarget.blur()}
@@ -237,7 +277,7 @@ export function Learned() {
                 <select
                   className="learned-lang"
                   value={s.language}
-                  disabled={busy}
+                  disabled={busy !== null}
                   aria-label={t('learned.language')}
                   title={t('learned.language')}
                   onChange={e => setLanguage(s.name, e.target.value)}
@@ -250,21 +290,32 @@ export function Learned() {
                   ))}
                 </select>
                 <div className="learned-clips">
-                  {s.clip_sessions.map(sid => (
-                    <div key={sid} className="learned-clip-row">
+                  {s.clip_sessions.map(clip => (
+                    <div key={clip.session} className="learned-clip-row">
                       <audio
                         className="learned-clip"
                         controls
                         preload="none"
-                        src={`${API_BASE_URL}/speakers/known/${encodeURIComponent(s.name)}/clip?session=${sid}`}
+                        title={clipLabel(clip)}
+                        aria-label={clipLabel(clip)}
+                        src={`${API_BASE_URL}/speakers/known/${encodeURIComponent(s.name)}/clip?session=${clip.session}`}
                       />
                       <select
                         className="learned-clip-reassign"
                         value=""
-                        disabled={busy}
+                        disabled={busy !== null}
                         aria-label={t('learned.reassignClip')}
                         title={t('learned.reassignClip')}
-                        onChange={e => e.target.value && reassignClip(s.name, sid, e.target.value)}
+                        onChange={e => {
+                          const value = e.target.value;
+                          if (!value) return;
+                          if (value === '__new__') {
+                            const name = window.prompt(t('learned.newSpeakerName'))?.trim();
+                            if (name) reassignClip(s.name, clip.session, name);
+                            return;
+                          }
+                          reassignClip(s.name, clip.session, value);
+                        }}
                       >
                         <option value="">{t('learned.reassignClip')}</option>
                         {speakers
@@ -274,13 +325,14 @@ export function Learned() {
                               {o.name}
                             </option>
                           ))}
+                        <option value="__new__">{t('learned.reassignNew')}</option>
                       </select>
                       <button
                         className="learned-clip-delete"
-                        disabled={busy}
+                        disabled={busy !== null}
                         title={t('learned.deleteClip')}
                         aria-label={t('learned.deleteClip')}
-                        onClick={() => deleteClip(s.name, sid)}
+                        onClick={() => deleteClip(s.name, clip.session)}
                       >
                         <X size={14} />
                       </button>
@@ -289,7 +341,7 @@ export function Learned() {
                 </div>
                 <button
                   className="learned-forget"
-                  disabled={busy}
+                  disabled={busy !== null}
                   title={t('learned.forget')}
                   onClick={() => forgetSpeaker(s.name)}
                 >
@@ -308,68 +360,81 @@ export function Learned() {
         {corrections.length === 0 ? (
           <p className="learned-empty">{t('learned.noCorrections')}</p>
         ) : (
-          <ul className="learned-list">
-            {corrections.map(c => (
-              <li key={c.wrong} className="learned-row">
-                {editingPair === c.wrong ? (
-                  // Enter saves from either box, Escape abandons — the same keys the speaker
-                  // rename above already uses.
-                  <form
-                    className="learned-pair-edit"
-                    onSubmit={e => {
-                      e.preventDefault();
-                      saveCorrection(c.wrong);
-                    }}
-                  >
-                    <input
-                      className="learned-rename"
-                      autoFocus
-                      aria-label={t('learned.editWrong')}
-                      value={pair.wrong}
-                      onChange={e => setPair(p => ({ ...p, wrong: e.target.value }))}
-                      onKeyDown={e => e.key === 'Escape' && setEditingPair(null)}
-                    />
-                    <ArrowRight className="learned-arrow" size={14} />
-                    <input
-                      className="learned-rename"
-                      aria-label={t('learned.editRight')}
-                      value={pair.right}
-                      onChange={e => setPair(p => ({ ...p, right: e.target.value }))}
-                      onKeyDown={e => e.key === 'Escape' && setEditingPair(null)}
-                    />
-                    <button className="learned-save" disabled={busy} title={t('common.save')}>
-                      <Check size={16} />
-                    </button>
-                  </form>
-                ) : (
-                  <>
-                    <span className="learned-wrong">{c.wrong}</span>
-                    <ArrowRight className="learned-arrow" size={14} />
-                    <span className="learned-right">{c.right}</span>
-                    <button
-                      className="learned-edit"
-                      disabled={busy}
-                      title={t('learned.edit')}
-                      onClick={() => {
-                        setPair({ wrong: c.wrong, right: c.right });
-                        setEditingPair(c.wrong);
+          <>
+            <input
+              className="learned-search"
+              type="search"
+              value={search}
+              placeholder={t('learned.searchCorrections')}
+              aria-label={t('learned.searchCorrections')}
+              onChange={e => setSearch(e.target.value)}
+            />
+            <ul className="learned-list">
+              {visibleCorrections.map(c => (
+                <li key={c.wrong} className={`learned-row${busy === c.wrong ? ' busy' : ''}`}>
+                  {editingPair === c.wrong ? (
+                    // Enter saves from either box, Escape abandons — the same keys the speaker
+                    // rename above already uses.
+                    <form
+                      className="learned-pair-edit"
+                      onSubmit={e => {
+                        e.preventDefault();
+                        saveCorrection(c.wrong);
                       }}
                     >
-                      <Pencil size={16} />
-                    </button>
-                  </>
-                )}
-                <button
-                  className="learned-forget"
-                  disabled={busy}
-                  title={t('learned.forget')}
-                  onClick={() => forgetCorrection(c.wrong)}
-                >
-                  <Trash2 size={16} />
-                </button>
-              </li>
-            ))}
-          </ul>
+                      <input
+                        className="learned-rename"
+                        autoFocus
+                        aria-label={t('learned.editWrong')}
+                        value={pair.wrong}
+                        onChange={e => setPair(p => ({ ...p, wrong: e.target.value }))}
+                        onKeyDown={e => e.key === 'Escape' && setEditingPair(null)}
+                      />
+                      <ArrowRight className="learned-arrow" size={14} />
+                      <input
+                        className="learned-rename"
+                        aria-label={t('learned.editRight')}
+                        value={pair.right}
+                        onChange={e => setPair(p => ({ ...p, right: e.target.value }))}
+                        onKeyDown={e => e.key === 'Escape' && setEditingPair(null)}
+                      />
+                      <button className="learned-save" disabled={busy !== null} title={t('common.save')}>
+                        <Check size={16} />
+                      </button>
+                    </form>
+                  ) : (
+                    <>
+                      <span className="learned-wrong">{c.wrong}</span>
+                      <ArrowRight className="learned-arrow" size={14} />
+                      <span className="learned-right">{c.right}</span>
+                      <span className="etable-count learned-count" title={t('learned.appliedCount', { count: c.count })}>
+                        {c.count}
+                      </span>
+                      <button
+                        className="learned-edit"
+                        disabled={busy !== null}
+                        title={t('learned.edit')}
+                        onClick={() => {
+                          setPair({ wrong: c.wrong, right: c.right });
+                          setEditingPair(c.wrong);
+                        }}
+                      >
+                        <Pencil size={16} />
+                      </button>
+                    </>
+                  )}
+                  <button
+                    className="learned-forget"
+                    disabled={busy !== null}
+                    title={t('learned.forget')}
+                    onClick={() => forgetCorrection(c.wrong)}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
         )}
       </section>
       )}

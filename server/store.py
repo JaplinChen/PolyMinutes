@@ -522,6 +522,14 @@ class Store(SpeakerStore):
             return {r["wrong"]: r["right"] for r in
                     self._db.execute("SELECT wrong, right FROM correction ORDER BY LENGTH(wrong) DESC")}
 
+    def corrections_detail(self) -> list[dict]:
+        """The pairs with how often each was re-taught — for the corrections page, where a count
+        separates a rule the room keeps relying on from a one-off edit."""
+        with self._lock:
+            return [{"wrong": r["wrong"], "right": r["right"], "count": r["count"]}
+                    for r in self._db.execute(
+                        "SELECT wrong, right, count FROM correction ORDER BY LENGTH(wrong) DESC")]
+
     def edit_correction(self, old_wrong: str, wrong: str, right: str) -> None:
         """Fix a learned pair in place, either side of it.
 

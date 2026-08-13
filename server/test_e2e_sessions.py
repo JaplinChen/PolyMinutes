@@ -93,7 +93,8 @@ def test_an_identified_voice_survives_its_meetings_deletion(client: TestClient) 
     sf.read(io.BytesIO(clip.content))  # valid WAV, not an empty blob
 
     kept = [s for s in client.get("/api/speakers/known").json() if s["name"] == "林保留"]
-    assert kept and kept[0]["clip_sessions"] == [session]
+    # A harvested clip's meeting is deleted, so it carries no date or line text — only the id.
+    assert kept and kept[0]["clip_sessions"] == [{"session": session, "started": None, "text": None}]
 
     # Manual forget is the one thing that removes it.
     client.delete("/api/speakers/known/%E6%9E%97%E4%BF%9D%E7%95%99")

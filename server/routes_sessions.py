@@ -111,7 +111,7 @@ def put_line_speaker(session_id: int, line_id: int, body: dict) -> dict:
 
 @router.get("/api/corrections")
 def get_corrections() -> list[dict]:
-    return [{"wrong": w, "right": r} for w, r in main.store.corrections().items()]
+    return main.store.corrections_detail()
 
 
 @router.put("/api/corrections/{wrong}")
