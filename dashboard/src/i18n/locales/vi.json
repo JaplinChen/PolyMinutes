@@ -301,6 +301,8 @@
     "correctionsNote": "Sửa một dòng trong bản ghi sẽ lưu lại cặp sai/đúng và áp dụng cho mọi bản ghi sau.",
     "noCorrections": "Chưa học được sửa lỗi nào. Hãy sửa một dòng trong bản ghi.",
     "forget": "Xoá mục này",
+    "deleteClip": "Xoá mẫu này",
+    "reassignClip": "Chuyển cho…",
     "rename": "Bấm để đổi tên",
     "language": "Buộc ngôn ngữ cho giọng này",
     "langAuto": "Tự nhận",

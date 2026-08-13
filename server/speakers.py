@@ -46,6 +46,13 @@ _SAMPLE_ORDER = ("ORDER BY (COALESCE(l.end_time - l.start, 0) < "
                  "(l.prev_speaker IS NOT l.speaker OR l.next_speaker IS NOT l.speaker), "
                  f"ABS(COALESCE(l.end_time - l.start, 0) - {SAMPLE_IDEAL_SECONDS}), "
                  "LENGTH(l.source) DESC")
+# Which edges of the picked line touch a speaker handover. Preferring mid-monologue lines is not
+# enough: a fragment voice has nothing *but* boundary lines to offer, and the other voice sits in
+# the edge that touches the handover. _sample shaves that edge off.
+_SAMPLE_RISK = (", (l.prev_speaker IS NOT NULL AND l.prev_speaker <> l.speaker) AS head_risk"
+                ", (l.next_speaker IS NOT NULL AND l.next_speaker <> l.speaker) AS tail_risk ")
+# Capped at a quarter of the span per edge so a one-second fragment still plays its middle.
+SAMPLE_EDGE_TRIM = 0.6
 
 
 def _cosine(a: np.ndarray, b: np.ndarray) -> float:
@@ -58,9 +65,16 @@ def _sample(row: sqlite3.Row | None) -> tuple[str, float, float | None] | None:
     before end_time was recorded."""
     if row is None:
         return None
-    end = row["end_time"]
-    span = float(end) - float(row["start"]) if end is not None else None
-    return (row["wav"], row["start"], span if span and span > 0 else None)
+    start, end = float(row["start"]), row["end_time"]
+    span = float(end) - start if end is not None else None
+    if span and span > 0 and "head_risk" in row.keys():
+        if row["head_risk"]:
+            cut = min(SAMPLE_EDGE_TRIM, span * 0.25)
+            start += cut
+            span -= cut
+        if row["tail_risk"]:
+            span -= min(SAMPLE_EDGE_TRIM, span * 0.25)
+    return (row["wav"], start, span if span and span > 0 else None)
 
 
 class SpeakerStore:
@@ -269,6 +283,34 @@ class SpeakerStore:
         merged.update({sid: True for sid in stored if sid not in merged})
         return sorted(merged.items(), key=lambda kv: kv[0], reverse=True)
 
+    def session_codes_for(self, name: str, session_id: int) -> list[str]:
+        """Every code this meeting gave to `name` — the handles a per-sample undo has to work on."""
+        with self._lock:
+            return [r["code"] for r in self._db.execute(
+                "SELECT code FROM speaker_name WHERE session_id=? AND name=?", (session_id, name))]
+
+    def unname_speaker(self, session_id: int, name: str) -> None:
+        """Withdraw one meeting's naming of `name`, leaving its other meetings alone."""
+        with self._lock:
+            self._db.execute("DELETE FROM speaker_name WHERE session_id=? AND name=?",
+                             (session_id, name))
+            self._db.commit()
+
+    def delete_speaker_clip(self, name: str, session_id: int) -> None:
+        with self._lock:
+            self._db.execute("DELETE FROM known_speaker_clip WHERE name=? AND session_id=?",
+                             (name, session_id))
+            self._db.commit()
+
+    def move_speaker_clip(self, name: str, session_id: int, new: str) -> None:
+        """Hand a harvested clip to another name. OR REPLACE: if the target already kept a clip
+        from the same meeting, one of the two is enough."""
+        with self._lock:
+            self._db.execute(
+                "UPDATE OR REPLACE known_speaker_clip SET name=? WHERE name=? AND session_id=?",
+                (new, name, session_id))
+            self._db.commit()
+
     def speaker_sample(self, name: str, session_id: int) -> tuple[str, float, float | None] | None:
         """Where to hear this voice in this meeting, and how long that utterance lasts.
 
@@ -279,7 +321,8 @@ class SpeakerStore:
         with self._lock:
             row = self._db.execute(
                 f"{_SAMPLE_LINES}"
-                "SELECT s.wav_path AS wav, l.start AS start, l.end_time AS end_time "
+                "SELECT s.wav_path AS wav, l.start AS start, l.end_time AS end_time"
+                f"{_SAMPLE_RISK}"
                 "FROM speaker_name sn "
                 "JOIN l ON l.session_id=sn.session_id AND l.speaker=sn.code "
                 "JOIN session s ON s.id=sn.session_id "
@@ -321,7 +364,8 @@ class SpeakerStore:
         with self._lock:
             row = self._db.execute(
                 f"{_SAMPLE_LINES}"
-                "SELECT s.wav_path AS wav, l.start AS start, l.end_time AS end_time FROM l "
+                "SELECT s.wav_path AS wav, l.start AS start, l.end_time AS end_time"
+                f"{_SAMPLE_RISK}FROM l "
                 "JOIN session s ON s.id = l.session_id "
                 f"WHERE l.session_id=? AND l.speaker=? {_SAMPLE_ORDER} LIMIT 1",
                 (session_id, code),

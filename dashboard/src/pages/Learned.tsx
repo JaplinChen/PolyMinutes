@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ArrowRight, Check, Pencil, Trash2 } from 'lucide-react';
+import { ArrowRight, Check, Pencil, Trash2, X } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { PageSkeleton } from '../components/PageSkeleton';
 import { useToast } from '../components/Toast';
@@ -55,6 +55,28 @@ export function Learned() {
     setBusy(true);
     try {
       setSpeakers(await appApi.forgetSpeaker(name));
+    } catch (err) {
+      fail(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteClip = async (name: string, idx: number) => {
+    setBusy(true);
+    try {
+      setSpeakers(await appApi.deleteSpeakerClip(name, idx));
+    } catch (err) {
+      fail(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reassignClip = async (name: string, idx: number, target: string) => {
+    setBusy(true);
+    try {
+      setSpeakers(await appApi.reassignSpeakerClip(name, idx, target));
     } catch (err) {
       fail(err);
     } finally {
@@ -219,13 +241,40 @@ export function Learned() {
                 </select>
                 <div className="learned-clips">
                   {Array.from({ length: Math.max(s.clips, 1) }, (_, i) => (
-                    <audio
-                      key={i}
-                      className="learned-clip"
-                      controls
-                      preload="none"
-                      src={`${API_BASE_URL}/speakers/known/${encodeURIComponent(s.name)}/clip?idx=${i}`}
-                    />
+                    <div key={i} className="learned-clip-row">
+                      <audio
+                        className="learned-clip"
+                        controls
+                        preload="none"
+                        src={`${API_BASE_URL}/speakers/known/${encodeURIComponent(s.name)}/clip?idx=${i}`}
+                      />
+                      <select
+                        className="learned-clip-reassign"
+                        value=""
+                        disabled={busy}
+                        aria-label={t('learned.reassignClip')}
+                        title={t('learned.reassignClip')}
+                        onChange={e => e.target.value && reassignClip(s.name, i, e.target.value)}
+                      >
+                        <option value="">{t('learned.reassignClip')}</option>
+                        {speakers
+                          .filter(o => o.name !== s.name)
+                          .map(o => (
+                            <option key={o.name} value={o.name}>
+                              {o.name}
+                            </option>
+                          ))}
+                      </select>
+                      <button
+                        className="learned-clip-delete"
+                        disabled={busy}
+                        title={t('learned.deleteClip')}
+                        aria-label={t('learned.deleteClip')}
+                        onClick={() => deleteClip(s.name, i)}
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
                   ))}
                 </div>
                 <button

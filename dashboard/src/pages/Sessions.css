@@ -197,7 +197,8 @@
 
 .sess-page .sess-name-field input {
   flex: 1;
-  min-width: 0;
+  /* A floor, not zero: with a suggest chip beside it the input used to collapse to nothing. */
+  min-width: 5rem;
   padding: var(--space-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -210,9 +211,20 @@
    plays the known voice to compare against the sample on this row. */
 .sess-page .sess-suggest {
   display: inline-flex;
-  flex: 0 0 auto;
+  /* Shrinkable: at flex-basis auto this chip refused to give way and ran under the audio
+     player on a tight row. The full text survives in the button's title. */
+  flex: 0 1 auto;
+  min-width: 0;
   gap: 4px;
   align-items: center;
+}
+
+.sess-page .sess-suggest .sess-suggest-apply {
+  display: inline-block;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .sess-page .sess-suggest button {

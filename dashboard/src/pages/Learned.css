@@ -147,6 +147,44 @@
   max-width: 240px;
 }
 
+.learned-page .learned-clip-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.learned-page .learned-clip-reassign {
+  flex: 0 0 auto;
+  padding: 2px 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input, var(--bg-card));
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+}
+
+.learned-page .learned-clip-delete {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.learned-page .learned-clip-delete:hover:not(:disabled) {
+  border-color: var(--border);
+  color: var(--danger, #dc2626);
+}
+
+.learned-page .learned-clip-delete:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* Language select is the right-group anchor when present; the clips then follow it, not the auto. */
 .learned-page .learned-lang + .learned-clips {
   margin-left: 0;

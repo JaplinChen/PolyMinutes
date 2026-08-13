@@ -301,6 +301,8 @@
     "correctionsNote": "Correcting a line on a transcript stores what was written against what was said, and applies it to every transcript afterwards.",
     "noCorrections": "No corrections learned yet. Edit a transcript line to teach one.",
     "forget": "Forget this",
+    "deleteClip": "Delete this sample",
+    "reassignClip": "Reassign to…",
     "rename": "Click to rename",
     "language": "Force this voice's language",
     "langAuto": "Auto-detect",
