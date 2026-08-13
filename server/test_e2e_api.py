@@ -389,7 +389,7 @@ def test_deleting_a_sample_undoes_what_that_meeting_taught(client: TestClient) -
     main.store.save_speaker_clip(NAME, bad, b"harvested")
 
     assert [sid for sid, _ in main.store.speaker_clip_sources(NAME)] == [bad, old]
-    r = client.delete(f"/api/speakers/known/{NAME}/clip", params={"idx": 0})
+    r = client.delete(f"/api/speakers/known/{NAME}/clip", params={"session": bad})
     assert r.status_code == 200, r.text
 
     assert main.store.speaker_names(bad) == {}          # the naming is withdrawn
@@ -399,7 +399,8 @@ def test_deleting_a_sample_undoes_what_that_meeting_taught(client: TestClient) -
     assert main.store.stored_clip(NAME, bad) is None    # the harvested clip is gone
     assert main.store.speaker_clip_sources(NAME) == [(old, False)]
 
-    assert client.delete(f"/api/speakers/known/{NAME}/clip", params={"idx": 9}).status_code == 404
+    assert client.delete(f"/api/speakers/known/{NAME}/clip",
+                         params={"session": 999999}).status_code == 404
     client.delete(f"/api/speakers/known/{NAME}")
 
 
@@ -421,9 +422,9 @@ def test_reassigning_a_sample_hands_the_meeting_to_the_right_name(client: TestCl
     client.put(f"/api/sessions/{move}/speakers", json={"S1": NAME})
     main.store.save_speaker_clip(NAME, move, b"harvested")
 
-    assert client.put(f"/api/speakers/known/{NAME}/clip", params={"idx": 0},
+    assert client.put(f"/api/speakers/known/{NAME}/clip", params={"session": move},
                       json={"name": ""}).status_code == 400
-    r = client.put(f"/api/speakers/known/{NAME}/clip", params={"idx": 0}, json={"name": NEW})
+    r = client.put(f"/api/speakers/known/{NAME}/clip", params={"session": move}, json={"name": NEW})
     assert r.status_code == 200, r.text
 
     assert main.store.speaker_names(move) == {"S1": NEW}   # the naming moved

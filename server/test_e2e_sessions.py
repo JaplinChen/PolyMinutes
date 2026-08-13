@@ -50,7 +50,7 @@ def test_known_voice_can_be_heard_and_renamed(client: TestClient) -> None:
     known = client.get("/api/speakers/known").json()
     assert [s["name"] for s in known] == ["Ana"] and known[0]["sessions"] >= 1
 
-    clip = client.get("/api/speakers/known/Ana/clip")
+    clip = client.get("/api/speakers/known/Ana/clip", params={"session": session})
     assert clip.status_code == 200 and clip.headers["content-type"] == "audio/wav"
     heard, rate = sf.read(io.BytesIO(clip.content))
     assert len(heard) == main.CLIP_SECONDS * rate, len(heard)
@@ -59,7 +59,8 @@ def test_known_voice_can_be_heard_and_renamed(client: TestClient) -> None:
     assert [s["name"] for s in renamed] == ["Ana Lee"]
     # The transcript must follow the rename, or it keeps showing a name that no longer exists.
     assert client.get(f"/api/sessions/{session}/lines").json()["speakers"]["S1"] == "Ana Lee"
-    assert client.get("/api/speakers/known/Ana/clip").status_code == 404
+    assert client.get("/api/speakers/known/Ana/clip",
+                      params={"session": session}).status_code == 404
 
     assert client.delete("/api/speakers/known/Ana%20Lee").json() == []
 
@@ -82,21 +83,21 @@ def test_an_identified_voice_survives_its_meetings_deletion(client: TestClient) 
     main.store.save_voiceprint(session, "S1", b"\x00" * 8)
     assert client.put(f"/api/sessions/{session}/speakers", json={"S1": "林保留"}).status_code == 200
 
-    assert client.get("/api/speakers/known/%E6%9E%97%E4%BF%9D%E7%95%99/clip?idx=0").status_code == 200
+    assert client.get(f"/api/speakers/known/%E6%9E%97%E4%BF%9D%E7%95%99/clip?session={session}").status_code == 200
     assert client.delete(f"/api/sessions/{session}").status_code == 200
     assert not wav.exists()
 
     # The meeting and its wav are gone; the voice still plays, from the harvested clip.
-    clip = client.get("/api/speakers/known/%E6%9E%97%E4%BF%9D%E7%95%99/clip?idx=0")
+    clip = client.get(f"/api/speakers/known/%E6%9E%97%E4%BF%9D%E7%95%99/clip?session={session}")
     assert clip.status_code == 200 and clip.headers["content-type"] == "audio/wav"
     sf.read(io.BytesIO(clip.content))  # valid WAV, not an empty blob
 
     kept = [s for s in client.get("/api/speakers/known").json() if s["name"] == "林保留"]
-    assert kept and kept[0]["clips"] == 1
+    assert kept and kept[0]["clip_sessions"] == [session]
 
     # Manual forget is the one thing that removes it.
     client.delete("/api/speakers/known/%E6%9E%97%E4%BF%9D%E7%95%99")
-    assert client.get("/api/speakers/known/%E6%9E%97%E4%BF%9D%E7%95%99/clip?idx=0").status_code == 404
+    assert client.get(f"/api/speakers/known/%E6%9E%97%E4%BF%9D%E7%95%99/clip?session={session}").status_code == 404
 
 
 def test_a_line_can_be_reassigned_to_another_speaker(client: TestClient) -> None:
@@ -631,7 +632,7 @@ def test_unnamed_speaker_can_be_heard_before_naming(client: TestClient) -> None:
     main.store.add_line(session, 3.0, "S2", "zh", "另一個人", {}, end_time=5.0)
 
     # Nobody has been named — the endpoint keyed on names finds nothing to play.
-    assert client.get("/api/speakers/known/S1/clip").status_code == 404
+    assert client.get(f"/api/speakers/known/S1/clip?session={session}").status_code == 404
 
     clip = client.get(f"/api/sessions/{session}/speakers/S1/clip")
     assert clip.status_code == 200 and clip.headers["content-type"] == "audio/wav"

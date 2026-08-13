@@ -19,8 +19,8 @@ export interface KnownSpeaker {
   language: string;
   /** Department this person belongs to; '' when unset. Fed to the summary for stance. */
   department: string;
-  /** Playable samples: meetings still on disk plus clips kept from deleted ones. */
-  clips: number;
+  /** Playable samples, newest first: session ids of meetings this voice can be heard in. */
+  clip_sessions: number[];
 }
 
 /** What the recogniser wrote against what was actually said, learned from an edit. */
@@ -220,10 +220,10 @@ export const appApi = {
       method: 'PUT',
       body: JSON.stringify({ language }),
     }),
-  deleteSpeakerClip: (name: string, idx: number) =>
-    request<KnownSpeaker[]>(`/speakers/known/${encodeURIComponent(name)}/clip?idx=${idx}`, { method: 'DELETE' }),
-  reassignSpeakerClip: (name: string, idx: number, target: string) =>
-    request<KnownSpeaker[]>(`/speakers/known/${encodeURIComponent(name)}/clip?idx=${idx}`, {
+  deleteSpeakerClip: (name: string, session: number) =>
+    request<KnownSpeaker[]>(`/speakers/known/${encodeURIComponent(name)}/clip?session=${session}`, { method: 'DELETE' }),
+  reassignSpeakerClip: (name: string, session: number, target: string) =>
+    request<KnownSpeaker[]>(`/speakers/known/${encodeURIComponent(name)}/clip?session=${session}`, {
       method: 'PUT',
       body: JSON.stringify({ name: target }),
     }),

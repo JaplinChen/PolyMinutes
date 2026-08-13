@@ -62,10 +62,10 @@ export function Learned() {
     }
   };
 
-  const deleteClip = async (name: string, idx: number) => {
+  const deleteClip = async (name: string, session: number) => {
     setBusy(true);
     try {
-      setSpeakers(await appApi.deleteSpeakerClip(name, idx));
+      setSpeakers(await appApi.deleteSpeakerClip(name, session));
     } catch (err) {
       fail(err);
     } finally {
@@ -73,10 +73,10 @@ export function Learned() {
     }
   };
 
-  const reassignClip = async (name: string, idx: number, target: string) => {
+  const reassignClip = async (name: string, session: number, target: string) => {
     setBusy(true);
     try {
-      setSpeakers(await appApi.reassignSpeakerClip(name, idx, target));
+      setSpeakers(await appApi.reassignSpeakerClip(name, session, target));
     } catch (err) {
       fail(err);
     } finally {
@@ -240,13 +240,13 @@ export function Learned() {
                   ))}
                 </select>
                 <div className="learned-clips">
-                  {Array.from({ length: Math.max(s.clips, 1) }, (_, i) => (
-                    <div key={i} className="learned-clip-row">
+                  {s.clip_sessions.map(sid => (
+                    <div key={sid} className="learned-clip-row">
                       <audio
                         className="learned-clip"
                         controls
                         preload="none"
-                        src={`${API_BASE_URL}/speakers/known/${encodeURIComponent(s.name)}/clip?idx=${i}`}
+                        src={`${API_BASE_URL}/speakers/known/${encodeURIComponent(s.name)}/clip?session=${sid}`}
                       />
                       <select
                         className="learned-clip-reassign"
@@ -254,7 +254,7 @@ export function Learned() {
                         disabled={busy}
                         aria-label={t('learned.reassignClip')}
                         title={t('learned.reassignClip')}
-                        onChange={e => e.target.value && reassignClip(s.name, i, e.target.value)}
+                        onChange={e => e.target.value && reassignClip(s.name, sid, e.target.value)}
                       >
                         <option value="">{t('learned.reassignClip')}</option>
                         {speakers
@@ -270,7 +270,7 @@ export function Learned() {
                         disabled={busy}
                         title={t('learned.deleteClip')}
                         aria-label={t('learned.deleteClip')}
-                        onClick={() => deleteClip(s.name, i)}
+                        onClick={() => deleteClip(s.name, sid)}
                       >
                         <X size={14} />
                       </button>
