@@ -233,6 +233,15 @@
   cursor: pointer;
 }
 
+/* Which evidence produced the guess — voiceprint or wording. Small and muted so the name stays
+   the headline; no fixed width, the chip must stay shrink-free but never over-wide. */
+.sess-page .sess-suggest-basis {
+  margin-left: 4px;
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  font-weight: 500;
+}
+
 .sess-page .sess-suggest button:hover {
   background: var(--primary-soft);
 }

@@ -8,7 +8,7 @@ import numpy as np
 import soundfile as sf
 from fastapi import APIRouter, HTTPException, Response
 
-from . import config, main, speakers
+from . import config, idiolect, main, speakers
 
 router = APIRouter()
 
@@ -145,6 +145,11 @@ def speaker_suggestions(session_id: int) -> dict:
     throws away are exactly what the naming screen needs: a person with the audio in their ears can
     verify a 0.5 hint that the pass rightly refused to assert. Codes without a stored voiceprint —
     fragments too short to embed — get no suggestion; they are merge fodder, not naming candidates.
+
+    When the two best names are within RECOGNISE_MARGIN the audio has run out of things to say, and
+    a code with enough transcript gets the tie broken by wording instead (`basis: "wording"`) —
+    exactly the two-way duel measured at 75-88% above idiolect.MIN_LINES. Under that many lines the
+    duel is a coin flip, so the hint stays withheld as before.
     """
     if not main.store.session(session_id):
         raise HTTPException(404, "no such session")
@@ -152,6 +157,8 @@ def speaker_suggestions(session_id: int) -> dict:
     if not known:
         return {}
     names = main.store.speaker_names(session_id)
+    # Built once: the corpus is every named line in the database, not something to rebuild per code.
+    word_profiles = idiolect.profiles(main.store.named_lines())
     out: dict[str, dict] = {}
     for code in {l["speaker"] for l in main.store.lines(session_id)}:
         if names.get(code, "").strip():
@@ -176,9 +183,53 @@ def speaker_suggestions(session_id: int) -> dict:
         # tops every unnamed code's list and the naming screen fills with the same wrong name —
         # measured on a real meeting: five codes all hinting one person at margins of 0.01-0.04.
         if len(ranked) > 1 and ranked[0][1] - ranked[1][1] < config.RECOGNISE_MARGIN:
+            lines = main.store.code_lines(session_id, code)
+            if len(lines) < idiolect.MIN_LINES:
+                continue
+            pair = {ranked[0][0], ranked[1][0]}
+            words = idiolect.rank(word_profiles, lines, exclude_session=session_id, only=pair)
+            if not words:
+                continue
+            winner = words[0][0]
+            out[code] = {"name": winner, "similarity": round(dict(ranked)[winner], 2),
+                         "basis": "wording"}
             continue
-        out[code] = {"name": ranked[0][0], "similarity": round(ranked[0][1], 2)}
+        out[code] = {"name": ranked[0][0], "similarity": round(ranked[0][1], 2), "basis": "voice"}
     return out
+
+
+@router.get("/api/speakers/conflicts")
+def speaker_conflicts() -> list[dict]:
+    """Named codes whose *wording* belongs to somebody else — a check the voiceprint cannot make.
+
+    A print learned from a mislabelled meeting is self-consistent forever: the voice matches the
+    name because that voice is what taught the name. The real case here was one director's voice
+    auto-learned under a vice-president's name, and nothing in the embedding space could see it.
+    Wording is independent evidence, so it can.
+
+    Only codes with CONFLICT_LINES+ lines are scanned, and the code's own meeting is excluded from
+    every profile — otherwise the code trains the very name it is being scored against. Even at
+    that length "beats everyone" is only ~80% right, so this is a list for a human to confirm, not
+    a verdict. Ordered worst-first by how far the current name has fallen.
+    """
+    word_profiles = idiolect.profiles(main.store.named_lines())
+    if len(word_profiles) < 2:
+        return []
+    out: list[dict] = []
+    for name, by_session in word_profiles.items():
+        for session_id in by_session:
+            for code in main.store.session_codes_for(name, session_id):
+                lines = main.store.code_lines(session_id, code)
+                if len(lines) < idiolect.CONFLICT_LINES:
+                    continue
+                ranked = idiolect.rank(word_profiles, lines, exclude_session=session_id)
+                order = [n for n, _ in ranked]
+                if not order or order[0] == name or name not in order:
+                    continue
+                out.append({"session": session_id, "code": code, "named": name,
+                            "sounds_like": order[0], "rank": order.index(name) + 1,
+                            "lines": len(lines)})
+    return sorted(out, key=lambda d: -d["rank"])
 
 
 def _clip_entry(name: str, sid: int, stored: bool) -> dict:

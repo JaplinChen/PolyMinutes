@@ -105,6 +105,27 @@ class SpeakerStore:
                 "SELECT code, name FROM speaker_name WHERE session_id=?", (session_id,)
             )}
 
+    def named_lines(self) -> list[tuple[str, int, str]]:
+        """Every line spoken by a named code, as (name, session_id, text) — the idiolect corpus.
+
+        orig_source first: the refine pass rewrites lines into clean prose, which is precisely
+        where the "嗯"/"齁"/"反正" that identify a speaker get deleted.
+        """
+        with self._lock:
+            return [(r["name"], r["session_id"], r["text"]) for r in self._db.execute(
+                "SELECT sn.name AS name, l.session_id AS session_id, "
+                "COALESCE(l.orig_source, l.source) AS text FROM line l "
+                "JOIN speaker_name sn ON sn.session_id=l.session_id AND sn.code=l.speaker "
+                "WHERE TRIM(sn.name) != '' AND LENGTH(l.source) > 1")]
+
+    def code_lines(self, session_id: int, code: str) -> list[str]:
+        """What one code actually said, same orig_source-first rule as named_lines()."""
+        with self._lock:
+            return [r["text"] for r in self._db.execute(
+                "SELECT COALESCE(l.orig_source, l.source) AS text FROM line l "
+                "WHERE l.session_id=? AND l.speaker=? AND LENGTH(l.source) > 1",
+                (session_id, code))]
+
     def save_voiceprint(self, session_id: int, code: str, centroid: bytes) -> None:
         with self._lock:
             self._db.execute(

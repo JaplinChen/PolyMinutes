@@ -205,7 +205,7 @@ export const appApi = {
     request<{ lines: TranscriptLine[]; speakers: Record<string, string> }>(`/sessions/${id}/lines`),
   // Who each unnamed code sounds most like — near-misses the auto-naming pass refused to assert.
   speakerSuggestions: (id: number) =>
-    request<Record<string, { name: string; similarity: number }>>(`/sessions/${id}/speakers/suggestions`),
+    request<Record<string, { name: string; similarity: number; basis: 'voice' | 'wording' }>>(`/sessions/${id}/speakers/suggestions`),
   setSpeakerNames: (id: number, names: Record<string, string>) =>
     request<Record<string, string>>(`/sessions/${id}/speakers`, { method: 'PUT', body: JSON.stringify(names) }),
   // Editing a line also teaches the correction: the backend stores what was written against what
