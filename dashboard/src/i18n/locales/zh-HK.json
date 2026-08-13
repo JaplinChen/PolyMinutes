@@ -74,6 +74,8 @@
     "suggestApplyHint": "相似度未達自動認名門檻，僅供參考。點擊採用此名字。",
     "suggestByWording": "用詞",
     "suggestApplyHintWording": "聲紋分不出來，這是依此人的用詞習慣（口頭禪、語氣詞）判斷的，請務必先聽過再套用。",
+    "suggestUnsure": "不確定",
+    "suggestApplyHintUnsure": "聲紋分不出這兩位，請各聽一段再決定要套用哪一個。",
     "suggestPlayHint": "播放 {{name}} 已學會的聲音樣本，與此發言者對照。",
     "fragmentHint": "此發言者只有零星幾句，且每句都貼著換手處——樣本可能混入他人聲音，建議聽逐字稿確認後直接合併進本尊，不必命名。",
     "refining": "精修中",
