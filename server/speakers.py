@@ -331,6 +331,24 @@ class SpeakerStore:
             ).fetchone()
         return _sample(row)
 
+    def speaker_sample_info(self, name: str, session_id: int) -> tuple[str, str] | None:
+        """When the meeting behind a sample ran and what its picked line says.
+
+        Same `_SAMPLE_ORDER` pick as speaker_sample(), so the text shown is the text of the line
+        that actually plays.
+        """
+        with self._lock:
+            row = self._db.execute(
+                f"{_SAMPLE_LINES}"
+                "SELECT s.started AS started, l.source AS source "
+                "FROM speaker_name sn "
+                "JOIN l ON l.session_id=sn.session_id AND l.speaker=sn.code "
+                "JOIN session s ON s.id=sn.session_id "
+                f"WHERE sn.name=? AND sn.session_id=? {_SAMPLE_ORDER} LIMIT 1",
+                (name, session_id),
+            ).fetchone()
+        return (row["started"], row["source"]) if row else None
+
     def save_speaker_clip(self, name: str, session_id: int, audio: bytes) -> None:
         """Keep this voice's sound beyond the meeting it came from. Capped like voiceprints: the
         oldest clips fall off so a long-lived name does not accumulate audio without bound."""

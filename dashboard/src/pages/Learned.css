@@ -73,6 +73,27 @@
   background: var(--bg-card);
 }
 
+/* Every control locks while any request runs; the dimmed row is where that request is. */
+.learned-page .learned-row.busy {
+  opacity: 0.6;
+}
+
+.learned-page .learned-search {
+  width: 100%;
+  margin: 0 0 10px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input, var(--bg-card));
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+}
+
+.learned-page .learned-count {
+  flex: none;
+}
+
 .learned-page .learned-name,
 .learned-page .learned-right {
   font-weight: 600;

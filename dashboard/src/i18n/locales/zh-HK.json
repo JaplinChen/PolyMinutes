@@ -310,7 +310,15 @@
     "sessions": "會議 {{count}} 場",
     "edit": "編輯這條修正",
     "editWrong": "辨識成什麼",
-    "editRight": "實際說什麼"
+    "editRight": "實際說什麼",
+    "confirmForget": "確定要忘掉「{{name}}」？聲紋與所有樣本將一併刪除。",
+    "confirmDeleteClip": "確定刪除此樣本？該場會議的命名與學到的聲紋會一併撤銷。",
+    "deletedMeeting": "已刪除的會議",
+    "searchCorrections": "搜尋修正…",
+    "appliedCount": "已套用 {{count}} 次",
+    "reassignNew": "新名字…",
+    "newSpeakerName": "輸入語者名字",
+    "nameTaken": "已有語者叫 {{name}}"
   },
   "ask": {
     "title": "提問",

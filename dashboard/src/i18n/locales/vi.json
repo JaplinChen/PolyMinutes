@@ -310,7 +310,15 @@
     "sessions": "{{count}} cuộc họp",
     "edit": "Sửa chỉnh sửa này",
     "editWrong": "Nghe nhầm thành",
-    "editRight": "Thực tế đã nói"
+    "editRight": "Thực tế đã nói",
+    "confirmForget": "Quên \"{{name}}\"? Dấu giọng và mọi mẫu sẽ bị xoá cùng lúc.",
+    "confirmDeleteClip": "Xoá mẫu này? Tên đã đặt trong cuộc họp đó và dấu giọng đã học sẽ bị thu hồi cùng lúc.",
+    "deletedMeeting": "Cuộc họp đã bị xoá",
+    "searchCorrections": "Tìm sửa lỗi…",
+    "appliedCount": "Đã áp dụng {{count}} lần",
+    "reassignNew": "Tên mới…",
+    "newSpeakerName": "Nhập tên người nói",
+    "nameTaken": "Đã có người nói tên {{name}}"
   },
   "ask": {
     "title": "Hỏi",
