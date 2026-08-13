@@ -160,16 +160,24 @@ def speaker_suggestions(session_id: int) -> dict:
         if stored is None:
             continue
         emb = np.frombuffer(stored, dtype=np.float32)
-        best_name, best = "", 0.0
+        per_name: dict[str, float] = {}
         for name, print_ in known:
             candidate = np.frombuffer(print_, dtype=np.float32)
             if candidate.shape != emb.shape:
                 continue
             score = speakers._cosine(emb, candidate)
-            if score > best:
-                best, best_name = score, name
-        if best_name and best >= SUGGEST_FLOOR:
-            out[code] = {"name": best_name, "similarity": round(best, 2)}
+            if score > per_name.get(name, 0.0):
+                per_name[name] = score
+        ranked = sorted(per_name.items(), key=lambda kv: -kv[1])
+        if not ranked or ranked[0][1] < SUGGEST_FLOOR:
+            continue
+        # Same rule the recogniser applies (diarize): the best NAME must beat the runner-up name
+        # by RECOGNISE_MARGIN. A polluted variant sits close to everyone, so without the margin it
+        # tops every unnamed code's list and the naming screen fills with the same wrong name —
+        # measured on a real meeting: five codes all hinting one person at margins of 0.01-0.04.
+        if len(ranked) > 1 and ranked[0][1] - ranked[1][1] < config.RECOGNISE_MARGIN:
+            continue
+        out[code] = {"name": ranked[0][0], "similarity": round(ranked[0][1], 2)}
     return out
 
 

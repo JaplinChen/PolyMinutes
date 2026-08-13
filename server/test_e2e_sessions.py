@@ -180,8 +180,15 @@ def test_unnamed_codes_get_a_who_it_sounds_like_hint(client: TestClient) -> None
     assert "S4" not in body, "a code without a voiceprint has nothing to compare"
     assert client.get("/api/sessions/999999/speakers/suggestions").status_code == 404
 
+    # A second person nearly as close kills the hint: a polluted variant sits close to everyone,
+    # and without the cross-name margin it tops every unnamed code with the same wrong name.
+    main.store.remember_speaker("聲紋近者", np.array([1.0, 0.05, 0.0], dtype=np.float32).tobytes())
+    assert "S1" not in client.get(f"/api/sessions/{session}/speakers/suggestions").json(), \
+        "two names within RECOGNISE_MARGIN — asserting either is a coin flip"
+
     # Shared store, alphabetical order: leave neither the meeting nor the learned voice behind.
     client.delete("/api/speakers/known/%E9%99%B3%E6%9F%8F%E5%AE%87")
+    client.delete("/api/speakers/known/%E8%81%B2%E7%B4%8B%E8%BF%91%E8%80%85")
     main.store.delete_session(session)
 
 
