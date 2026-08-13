@@ -42,7 +42,7 @@ export function Sessions() {
   // Codes ticked on the speaker page to fold into one person — the diariser splits a drifting voice.
   const [mergeSel, setMergeSel] = useState<Set<string>>(new Set());
   // Who each unnamed code sounds most like — the hint the naming screen never had.
-  const [suggestions, setSuggestions] = useState<Record<string, { name: string; similarity: number }>>({});
+  const [suggestions, setSuggestions] = useState<Record<string, { name: string; similarity: number; basis: 'voice' | 'wording' }>>({});
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<{ id: number; text: string } | null>(null);
   const [importing, setImporting] = useState(false);
@@ -729,13 +729,16 @@ export function Sessions() {
                       <button
                         type="button"
                         className="sess-suggest-apply"
-                        title={t('sessions.suggestApplyHint')}
+                        title={t(suggestions[code].basis === 'wording' ? 'sessions.suggestApplyHintWording' : 'sessions.suggestApplyHint')}
                         onClick={() => saveName(code, suggestions[code].name)}
                       >
                         {t('sessions.suggestLabel', {
                           name: suggestions[code].name,
                           pct: Math.round(suggestions[code].similarity * 100),
                         })}
+                        {suggestions[code].basis === 'wording' && (
+                          <span className="sess-suggest-basis">{t('sessions.suggestByWording')}</span>
+                        )}
                       </button>
                       <button
                         type="button"

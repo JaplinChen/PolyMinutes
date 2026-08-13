@@ -899,3 +899,59 @@ def test_starting_without_models_says_which_file_is_missing(client: TestClient) 
 
     # And the failed start must not leave the card claimed or a session half-open.
     assert client.get("/api/recording/status").json()["recording"] is False
+
+
+def _seed_idiolect(name: str, phrases: tuple[str, str], count: int = 60) -> tuple[int, str]:
+    """One meeting where `name` speaks `count` lines carrying a distinctive verbal tic."""
+    session = main.store.start_session("now", "")
+    for i in range(count):
+        main.store.add_line(session, float(i), "S1", "zh",
+                            f"{phrases[0]}第{i}個進度我們再確認{phrases[1]}", {})
+    main.store.set_speaker_name(session, "S1", name)
+    return session, "S1"
+
+
+def test_wording_identifies_a_speaker_and_flags_a_mislabelled_code(client: TestClient) -> None:
+    """Idiolect is evidence the voiceprint cannot produce: a print learned from a mislabelled
+    meeting agrees with itself forever, while the words do not. Only above the measured line
+    counts, though — under MIN_LINES a two-way duel is 51%, so wording must break no ties there."""
+    from . import idiolect
+
+    # Two meetings each: the conflict scan excludes a code's own meeting, so a name with a single
+    # meeting has no profile left to defend itself with.
+    a_sessions = [_seed_idiolect("口頭禪甲", ("齁反正", "啦"))[0] for _ in range(2)]
+    b_sessions = [_seed_idiolect("口頭禪乙", ("基本上其實", "嗯"))[0] for _ in range(2)]
+
+    profiles = idiolect.profiles(main.store.named_lines())
+    fresh = [f"齁反正這個案子我們下週再看啦第{i}次" for i in range(30)]
+    assert idiolect.rank(profiles, fresh)[0][0] == "口頭禪甲"
+
+    # A code deliberately named as B while talking exactly like A: the conflict scan must see it,
+    # and must not report the two honest codes.
+    wrong = main.store.start_session("now", "")
+    for i in range(idiolect.CONFLICT_LINES + 5):
+        main.store.add_line(wrong, float(i), "S1", "zh", f"齁反正第{i}個進度我們再確認啦", {})
+    main.store.set_speaker_name(wrong, "S1", "口頭禪乙")
+
+    conflicts = client.get("/api/speakers/conflicts")
+    assert conflicts.status_code == 200, conflicts.text
+    found = {(c["session"], c["code"]): c for c in conflicts.json()}
+    hit = found.get((wrong, "S1"))
+    assert hit and hit["named"] == "口頭禪乙" and hit["sounds_like"] == "口頭禪甲", conflicts.json()
+    assert hit["lines"] == idiolect.CONFLICT_LINES + 5
+    assert not [s for s in a_sessions + b_sessions if (s, "S1") in found], "clean codes flagged"
+
+    # Below MIN_LINES a tied voiceprint stays silent rather than letting wording decide.
+    short = main.store.start_session("now", "")
+    for i in range(idiolect.MIN_LINES - 1):
+        main.store.add_line(short, float(i), "S2", "zh", f"齁反正第{i}句啦", {})
+    main.store.save_voiceprint(short, "S2", np.array([1.0, 0.0, 0.0], dtype=np.float32).tobytes())
+    main.store.remember_speaker("口頭禪甲", np.array([1.0, 0.0, 0.0], dtype=np.float32).tobytes())
+    main.store.remember_speaker("口頭禪乙", np.array([1.0, 0.02, 0.0], dtype=np.float32).tobytes())
+    assert "S2" not in client.get(f"/api/sessions/{short}/speakers/suggestions").json(), \
+        "under MIN_LINES wording is a coin flip and must not break the tie"
+
+    for name in ("口頭禪甲", "口頭禪乙"):
+        main.store.forget_speaker(name)
+    for sid in a_sessions + b_sessions + [wrong, short]:
+        main.store.delete_session(sid)

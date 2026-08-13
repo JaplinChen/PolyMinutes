@@ -72,6 +72,8 @@
     "fragmentBadge": "fragment",
     "suggestLabel": "Sounds like: {{name}} ({{pct}}%)",
     "suggestApplyHint": "Below the auto-naming bar — a hint, not a verdict. Click to adopt the name.",
+    "suggestByWording": "wording",
+    "suggestApplyHintWording": "The voiceprints couldn't tell them apart; this is judged from this person's wording habits (pet phrases, filler words). Please listen before applying.",
     "suggestPlayHint": "Play {{name}}'s learned voice to compare against this speaker.",
     "fragmentHint": "This speaker has only a few scattered lines, each right at a speaker change — the sample may mix in someone else's voice. Check the transcript and merge it into the real person instead of naming it.",
     "refining": "Refining",
