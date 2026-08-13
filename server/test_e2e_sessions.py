@@ -54,6 +54,10 @@ def test_known_voice_can_be_heard_and_renamed(client: TestClient) -> None:
     assert clip.status_code == 200 and clip.headers["content-type"] == "audio/wav"
     heard, rate = sf.read(io.BytesIO(clip.content))
     assert len(heard) == main.CLIP_SECONDS * rate, len(heard)
+    # No session = the newest one: the naming screen's compare button asks only what this person
+    # sounds like, and requiring the parameter silently muted it (422 into an empty catch).
+    latest = client.get("/api/speakers/known/Ana/clip")
+    assert latest.status_code == 200 and latest.content == clip.content
 
     renamed = client.put("/api/speakers/known/Ana", json={"name": "Ana Lee"}).json()
     assert [s["name"] for s in renamed] == ["Ana Lee"]

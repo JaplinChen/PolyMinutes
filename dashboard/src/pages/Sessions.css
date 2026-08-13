@@ -160,6 +160,9 @@
   display: flex;
   flex: 1;
   min-width: 0;
+  /* Tight rows wrap instead of squeezing: the suggest chip's text IS the information, so
+     shrinking it to "最…" defeats it. On overflow it drops to its own line below the input. */
+  flex-wrap: wrap;
   gap: var(--space-2);
   align-items: center;
 }
@@ -211,20 +214,9 @@
    plays the known voice to compare against the sample on this row. */
 .sess-page .sess-suggest {
   display: inline-flex;
-  /* Shrinkable: at flex-basis auto this chip refused to give way and ran under the audio
-     player on a tight row. The full text survives in the button's title. */
-  flex: 0 1 auto;
-  min-width: 0;
+  flex: 0 0 auto;
   gap: 4px;
   align-items: center;
-}
-
-.sess-page .sess-suggest .sess-suggest-apply {
-  display: inline-block;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
 }
 
 .sess-page .sess-suggest button {
