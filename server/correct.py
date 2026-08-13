@@ -249,7 +249,12 @@ def diff_terms(original: str, candidate: str) -> list[tuple[str, str]]:
             else:
                 break
         before, after = _trim(original[i1 - left : i2 + right], candidate[j1 - left : j2 + right])
-        if MIN_LEN <= len(after) <= MAX_LEN and before != after:
+        # The wrong side needs the same floor as the right side, and must not be pure particle:
+        # a human fixing one 的 that should have been 裂痕 taught 的→裂痕 as a literal alias, which
+        # then rewrote every 的 in every later transcript. A one-character or all-particle wrong
+        # side is a sentence fragment, not a term worth generalising.
+        if MIN_LEN <= len(after) <= MAX_LEN and before != after \
+                and len(before) >= MIN_LEN and not all(c in PARTICLES for c in before):
             out.append((before, after))
     return out
 

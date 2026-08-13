@@ -748,6 +748,16 @@ def test_a_learned_correction_can_be_fixed_in_place(client: TestClient) -> None:
     assert len(client.get("/api/corrections").json()) == before
 
 
+def test_learning_the_inverse_of_a_rule_forgets_the_original(client: TestClient) -> None:
+    """首先→昨天 plus 昨天→首先 flips whichever word the speaker actually said, every pass."""
+    before = len(client.get("/api/corrections").json())
+    main.store.add_correction("首先", "昨天")
+    main.store.add_correction("昨天", "首先")
+    pairs = {c["wrong"]: c["right"] for c in client.get("/api/corrections").json()}
+    assert "首先" not in pairs and "昨天" not in pairs
+    assert len(client.get("/api/corrections").json()) == before
+
+
 def test_a_transcript_line_can_be_played_back(client: TestClient) -> None:
     """Correcting a line means judging text against audio; the page had only the text."""
     import soundfile as sf
