@@ -206,6 +206,33 @@
   transition: border-color 200ms ease;
 }
 
+/* "sounds most like" hint beside an unnamed code: one click adopts the name, the speaker icon
+   plays the known voice to compare against the sample on this row. */
+.sess-page .sess-suggest {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 4px;
+  align-items: center;
+}
+
+.sess-page .sess-suggest button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border: 1px dashed var(--primary);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--primary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sess-page .sess-suggest button:hover {
+  background: var(--primary-soft);
+}
+
 .sess-page .sess-name-field input:hover {
   border-color: var(--text-muted);
 }
