@@ -214,30 +214,38 @@ def test_naming_a_reassigned_code_learns_the_voice_from_its_lines(client: TestCl
     client.delete(f"/api/speakers/known/{NAME}")
 
 
-def test_naming_one_person_across_codes_learns_every_voice(client: TestClient) -> None:
-    """One person split across several codes must teach every variant, not just the last.
+def test_reassign_and_merge_keep_voiceprints_in_step(client: TestClient) -> None:
+    """Moving lines between codes changes what each code's audio is; their prints must follow.
 
-    The diariser flattens a room unevenly: a voice that drifts gets minted as S1, S17, S20. Naming
-    all of them the same person used to keep only the print saved last (name was the primary key),
-    so three of four voice variants were thrown away. Now each distinct print is stored, and a
-    near-duplicate adds nothing.
+    A reassign re-derives both the donor's and the receiver's print; a merge re-derives the kept
+    code and drops the absorbed one's, so no print keeps describing audio its code no longer has.
     """
-    session = main.store.start_session("2026-02-02T09:00:00", "multi.wav")
-    NAME = "審查臨時多聲"
-    # Two orthogonal prints — genuinely different variants of the one person.
-    main.store.save_voiceprint(session, "S1", np.array([1.0, 0.0, 0.0, 0.0], "float32").tobytes())
-    main.store.save_voiceprint(session, "S2", np.array([0.0, 1.0, 0.0, 0.0], "float32").tobytes())
-    client.put(f"/api/sessions/{session}/speakers", json={"S1": NAME, "S2": NAME})
-    assert sum(n == NAME for n, _ in main.store.known_voiceprints()) == 2
+    import soundfile as sf
 
-    # A near-duplicate of the first print teaches nothing, so the count holds.
-    main.store.save_voiceprint(session, "S3", np.array([1.0, 0.0, 0.0, 0.01], "float32").tobytes())
-    client.put(f"/api/sessions/{session}/speakers", json={"S3": NAME})
-    assert sum(n == NAME for n, _ in main.store.known_voiceprints()) == 2
+    from . import routes_speakers
 
-    # Forgetting the voice drops every variant, not just the representative one.
-    client.delete(f"/api/speakers/known/{NAME}")
-    assert sum(n == NAME for n, _ in main.store.known_voiceprints()) == 0
+    wav = config.RECORDINGS_DIR / "instep.wav"
+    wav.parent.mkdir(parents=True, exist_ok=True)
+    sf.write(str(wav), np.zeros(config.SAMPLE_RATE * 15, dtype="float32"), config.SAMPLE_RATE)
+    session = main.store.start_session("now", str(wav))
+    main.store.add_line(session, 1.0, "S1", "zh", "第一句話講得夠長", {}, end_time=5.0)
+    second = main.store.add_line(session, 6.0, "S1", "zh", "第二句話也夠長", {}, end_time=10.0)
+
+    original = routes_speakers._embed
+    routes_speakers._embed = lambda samples, rate: np.array([1.0, 0.0], dtype="float32")
+    try:
+        r = client.put(f"/api/sessions/{session}/lines/{second}/speaker", json={"speaker": "S31"})
+        assert r.status_code == 200, r.text
+        assert main.store.voiceprint(session, "S31") is not None, "the receiver gets a print"
+        assert main.store.voiceprint(session, "S1") is not None, "the donor's print is re-derived"
+
+        r = client.post(f"/api/sessions/{session}/speakers/merge",
+                        json={"into": "S1", "from": ["S31"]})
+        assert r.status_code == 200, r.text
+    finally:
+        routes_speakers._embed = original
+    assert main.store.voiceprint(session, "S31") is None, "the absorbed code's print is dropped"
+    assert main.store.voiceprint(session, "S1") is not None
 
 
 def test_clearing_session_names_drops_the_stale_mapping(client: TestClient) -> None:

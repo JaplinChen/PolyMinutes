@@ -48,9 +48,14 @@ MIN_PIECE_SECONDS = 0.5
 # 0.80 is the last value that costs no long line. Above it the curve flattens and real speech
 # starts going: at 1.00 one of the six reference reports is gone.
 POST_MEETING_MIN_SPEECH = 0.80
-# Utterances averaged into a speaker's stored voiceprint. Their longest few: enough for a stable
-# centroid, and a fixed cost per speaker rather than one embedding per utterance in the meeting.
+# Utterances averaged into a speaker's stored voiceprint: enough for a stable centroid, and a
+# fixed cost per speaker rather than one embedding per utterance in the meeting.
 VOICEPRINT_SAMPLES = 5
+# The utterance length a voiceprint sample wants. Same lesson as the naming clips (#145/#146):
+# the *longest* utterance is adversely selected — a line is long exactly when the segmenter missed
+# a turn inside it, so it averages somebody else's voice into the centroid. Mid-monologue pieces
+# near this length are the clean ones.
+VOICEPRINT_IDEAL_SECONDS = 8.0
 
 
 @dataclass
@@ -193,20 +198,34 @@ def _remember_voices(store: Store, session_id: int, utterances: list[Utterance],
     back rather than dropping the room to anonymous Sn again.
     """
     groups: dict[str, list[Utterance]] = {}
-    for u in utterances:
+    # A piece flanked by the same speaker on both sides is mid-monologue; one at a speaker
+    # boundary is where a missed turn leaves the other person's voice. Prefer the former.
+    boundary: set[int] = set()
+    for i, u in enumerate(utterances):
+        prev = utterances[i - 1].speaker if i > 0 else ""
+        nxt = utterances[i + 1].speaker if i + 1 < len(utterances) else ""
+        if prev != u.speaker or nxt != u.speaker:
+            boundary.add(id(u))
         if u.speaker and len(u.samples) / config.SAMPLE_RATE >= config.MIN_EMBED_SECONDS:
             groups.setdefault(u.speaker, []).append(u)
 
     recognised: dict[str, str] = {}
     for code, said in groups.items():
-        # Their longest few, not everything they said: a centroid is an average, and averaging the
-        # clearest samples costs a fixed handful of embeddings per speaker instead of one per
-        # utterance in the meeting.
-        best = sorted(said, key=lambda u: -len(u.samples))[:VOICEPRINT_SAMPLES]
+        # A clean handful, not everything they said: a centroid is an average, and averaging the
+        # cleanest samples costs a fixed few embeddings per speaker instead of one per utterance.
+        best = sorted(said, key=lambda u: (
+            id(u) in boundary,
+            abs(len(u.samples) / config.SAMPLE_RATE - VOICEPRINT_IDEAL_SECONDS),
+        ))[:VOICEPRINT_SAMPLES]
         centroid = np.mean([diarizer.embed(u.samples) for u in best], axis=0).astype(np.float32)
         store.save_voiceprint(session_id, code, centroid.tobytes())
-        if name := diarizer._recognise(centroid):
+        name, score = diarizer.recognise(centroid)
+        if name:
             recognised[code] = name
+            # A confident match is labelled data nobody had to type: fold this meeting's print
+            # back into the name so a drifting voice keeps refreshing its own variants.
+            if score >= config.AUTO_LEARN_THRESHOLD:
+                store.remember_speaker(name, centroid.tobytes())
     return recognised
 
 
