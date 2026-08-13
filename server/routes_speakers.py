@@ -148,8 +148,14 @@ def speaker_suggestions(session_id: int) -> dict:
 
     When the two best names are within RECOGNISE_MARGIN the audio has run out of things to say, and
     a code with enough transcript gets the tie broken by wording instead (`basis: "wording"`) —
-    exactly the two-way duel measured at 75-88% above idiolect.MIN_LINES. Under that many lines the
-    duel is a coin flip, so the hint stays withheld as before.
+    exactly the two-way duel measured at 75-88% above idiolect.MIN_LINES.
+
+    When wording cannot arbitrate — too few lines, or no features to score — the answer is to say so
+    (`basis: "unsure"`, both candidates returned), not to withhold. Withholding is the worse failure:
+    on real data almost every tied code is also a short fragment, so the silent branch emptied the
+    whole screen, and this screen exists precisely so a person with the audio can decide. Two names
+    side by side is a question a human settles in one listen; picking one for them would dress a coin
+    flip up as a conclusion. Below SUGGEST_FLOOR nothing is shown at all — that is noise, not doubt.
     """
     if not main.store.session(session_id):
         raise HTTPException(404, "no such session")
@@ -184,17 +190,22 @@ def speaker_suggestions(session_id: int) -> dict:
         # measured on a real meeting: five codes all hinting one person at margins of 0.01-0.04.
         if len(ranked) > 1 and ranked[0][1] - ranked[1][1] < config.RECOGNISE_MARGIN:
             lines = main.store.code_lines(session_id, code)
-            if len(lines) < idiolect.MIN_LINES:
-                continue
-            pair = {ranked[0][0], ranked[1][0]}
-            words = idiolect.rank(word_profiles, lines, exclude_session=session_id, only=pair)
-            if not words:
-                continue
-            winner = words[0][0]
-            out[code] = {"name": winner, "similarity": round(dict(ranked)[winner], 2),
-                         "basis": "wording"}
+            words = []
+            if len(lines) >= idiolect.MIN_LINES:
+                pair = {ranked[0][0], ranked[1][0]}
+                words = idiolect.rank(word_profiles, lines, exclude_session=session_id, only=pair)
+            if words:
+                winner = words[0][0]
+                out[code] = {"name": winner, "similarity": round(dict(ranked)[winner], 2),
+                             "basis": "wording", "alternative": None}
+            else:
+                out[code] = {"name": ranked[0][0], "similarity": round(ranked[0][1], 2),
+                             "basis": "unsure",
+                             "alternative": {"name": ranked[1][0],
+                                             "similarity": round(ranked[1][1], 2)}}
             continue
-        out[code] = {"name": ranked[0][0], "similarity": round(ranked[0][1], 2), "basis": "voice"}
+        out[code] = {"name": ranked[0][0], "similarity": round(ranked[0][1], 2), "basis": "voice",
+                     "alternative": None}
     return out
 
 

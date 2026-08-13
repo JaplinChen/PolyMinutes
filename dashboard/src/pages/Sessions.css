@@ -215,6 +215,18 @@
 .sess-page .sess-suggest {
   display: inline-flex;
   flex: 0 0 auto;
+  /* Two candidates can outrun the row; wrap them instead of pushing the input off-screen. */
+  flex-wrap: wrap;
+  max-width: 100%;
+  gap: 4px;
+  align-items: center;
+}
+
+/* An 'unsure' hint shows two candidates: each apply+listen pair stays glued together and the pairs
+   wrap as units rather than splitting a name from its speaker icon. */
+.sess-page .sess-suggest-pick {
+  display: inline-flex;
+  flex: 0 0 auto;
   gap: 4px;
   align-items: center;
 }

@@ -29,6 +29,13 @@ export interface SpeakerClip {
   text: string | null;
 }
 
+export interface SpeakerSuggestion {
+  name: string;
+  similarity: number;
+  basis: 'voice' | 'wording' | 'unsure';
+  alternative: { name: string; similarity: number } | null;
+}
+
 /** What the recogniser wrote against what was actually said, learned from an edit. */
 export interface LearnedCorrection {
   wrong: string;
@@ -204,8 +211,10 @@ export const appApi = {
   sessionLines: (id: number) =>
     request<{ lines: TranscriptLine[]; speakers: Record<string, string> }>(`/sessions/${id}/lines`),
   // Who each unnamed code sounds most like — near-misses the auto-naming pass refused to assert.
+  // basis 'unsure': voiceprints couldn't separate the top two and wording couldn't break the tie,
+  // so both candidates come back and the user picks after listening.
   speakerSuggestions: (id: number) =>
-    request<Record<string, { name: string; similarity: number; basis: 'voice' | 'wording' }>>(`/sessions/${id}/speakers/suggestions`),
+    request<Record<string, SpeakerSuggestion>>(`/sessions/${id}/speakers/suggestions`),
   setSpeakerNames: (id: number, names: Record<string, string>) =>
     request<Record<string, string>>(`/sessions/${id}/speakers`, { method: 'PUT', body: JSON.stringify(names) }),
   // Editing a line also teaches the correction: the backend stores what was written against what

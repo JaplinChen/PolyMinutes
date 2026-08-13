@@ -7,7 +7,7 @@ import { PageSkeleton } from '../components/PageSkeleton';
 import { TranscriptRow } from '../components/sessions/TranscriptRow';
 import { useToast } from '../components/Toast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
-import { appApi, type MeetingSummary, type RefineJob, type RefineStage, type RefineState, type SessionSummary, type TranscriptLine } from '../services/app.api';
+import { appApi, type MeetingSummary, type RefineJob, type RefineStage, type RefineState, type SessionSummary, type SpeakerSuggestion, type TranscriptLine } from '../services/app.api';
 import { API_BASE_URL, NO_SUCH_ENDPOINT } from '../services/http';
 import { editingLocked } from '../services/sessionSummary';
 import './Sessions.css';
@@ -17,6 +17,13 @@ import './Sessions.summary.css';
 // How often to re-check a session that is still being refined. The pass takes minutes, so this is
 // about noticing it finished rather than tracking progress, and it stops the moment it has.
 const REFINE_POLL_MS = 5000;
+
+// 'unsure' means the voiceprints tied and wording couldn't break it, so both candidates are offered
+// side by side rather than picking one arbitrarily — silence here read as "the hint disappeared".
+function suggestCandidates(s: SpeakerSuggestion): { name: string; similarity: number }[] {
+  const head = { name: s.name, similarity: s.similarity };
+  return s.basis === 'unsure' && s.alternative ? [head, s.alternative] : [head];
+}
 
 // Only ping the OS for a pass that ran long enough that the user has likely walked away — a quick
 // meeting refine that finishes while they glanced at another tab does not deserve a notification.
@@ -42,7 +49,7 @@ export function Sessions() {
   // Codes ticked on the speaker page to fold into one person — the diariser splits a drifting voice.
   const [mergeSel, setMergeSel] = useState<Set<string>>(new Set());
   // Who each unnamed code sounds most like — the hint the naming screen never had.
-  const [suggestions, setSuggestions] = useState<Record<string, { name: string; similarity: number; basis: 'voice' | 'wording' }>>({});
+  const [suggestions, setSuggestions] = useState<Record<string, SpeakerSuggestion>>({});
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<{ id: number; text: string } | null>(null);
   const [importing, setImporting] = useState(false);
@@ -726,30 +733,43 @@ export function Sessions() {
                   />
                   {!(names[code] ?? '').trim() && suggestions[code] && (
                     <span className="sess-suggest">
-                      <button
-                        type="button"
-                        className="sess-suggest-apply"
-                        title={t(suggestions[code].basis === 'wording' ? 'sessions.suggestApplyHintWording' : 'sessions.suggestApplyHint')}
-                        onClick={() => saveName(code, suggestions[code].name)}
-                      >
-                        {t('sessions.suggestLabel', {
-                          name: suggestions[code].name,
-                          pct: Math.round(suggestions[code].similarity * 100),
-                        })}
-                        {suggestions[code].basis === 'wording' && (
-                          <span className="sess-suggest-basis">{t('sessions.suggestByWording')}</span>
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        className="sess-suggest-play"
-                        title={t('sessions.suggestPlayHint', { name: suggestions[code].name })}
-                        onClick={() => {
-                          new Audio(`${API_BASE_URL}/speakers/known/${encodeURIComponent(suggestions[code].name)}/clip`).play().catch(() => {});
-                        }}
-                      >
-                        <Volume2 size={14} />
-                      </button>
+                      {suggestions[code].basis === 'unsure' && (
+                        <span className="sess-suggest-basis">{t('sessions.suggestUnsure')}</span>
+                      )}
+                      {suggestCandidates(suggestions[code]).map(cand => (
+                        <span key={cand.name} className="sess-suggest-pick">
+                          <button
+                            type="button"
+                            className="sess-suggest-apply"
+                            title={t(
+                              suggestions[code].basis === 'unsure'
+                                ? 'sessions.suggestApplyHintUnsure'
+                                : suggestions[code].basis === 'wording'
+                                  ? 'sessions.suggestApplyHintWording'
+                                  : 'sessions.suggestApplyHint',
+                            )}
+                            onClick={() => saveName(code, cand.name)}
+                          >
+                            {t('sessions.suggestLabel', {
+                              name: cand.name,
+                              pct: Math.round(cand.similarity * 100),
+                            })}
+                            {suggestions[code].basis === 'wording' && (
+                              <span className="sess-suggest-basis">{t('sessions.suggestByWording')}</span>
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            className="sess-suggest-play"
+                            title={t('sessions.suggestPlayHint', { name: cand.name })}
+                            onClick={() => {
+                              new Audio(`${API_BASE_URL}/speakers/known/${encodeURIComponent(cand.name)}/clip`).play().catch(() => {});
+                            }}
+                          >
+                            <Volume2 size={14} />
+                          </button>
+                        </span>
+                      ))}
                     </span>
                   )}
                 </label>

@@ -180,11 +180,14 @@ def test_unnamed_codes_get_a_who_it_sounds_like_hint(client: TestClient) -> None
     assert "S4" not in body, "a code without a voiceprint has nothing to compare"
     assert client.get("/api/sessions/999999/speakers/suggestions").status_code == 404
 
-    # A second person nearly as close kills the hint: a polluted variant sits close to everyone,
-    # and without the cross-name margin it tops every unnamed code with the same wrong name.
+    # A second person nearly as close turns the hint into an open question: asserting either name
+    # would be a coin flip, but hiding it robs the one screen built for a human to listen and pick.
     main.store.remember_speaker("聲紋近者", np.array([1.0, 0.05, 0.0], dtype=np.float32).tobytes())
-    assert "S1" not in client.get(f"/api/sessions/{session}/speakers/suggestions").json(), \
-        "two names within RECOGNISE_MARGIN — asserting either is a coin flip"
+    tied = client.get(f"/api/sessions/{session}/speakers/suggestions").json()["S1"]
+    assert tied["basis"] == "unsure", tied
+    assert tied["alternative"] and tied["alternative"]["name"] != tied["name"], tied
+    assert {tied["name"], tied["alternative"]["name"]} == {"陳柏宇", "聲紋近者"}, tied
+    assert tied["similarity"] > 0 and tied["alternative"]["similarity"] > 0, tied
 
     # Shared store, alphabetical order: leave neither the meeting nor the learned voice behind.
     client.delete("/api/speakers/known/%E9%99%B3%E6%9F%8F%E5%AE%87")
@@ -941,15 +944,16 @@ def test_wording_identifies_a_speaker_and_flags_a_mislabelled_code(client: TestC
     assert hit["lines"] == idiolect.CONFLICT_LINES + 5
     assert not [s for s in a_sessions + b_sessions if (s, "S1") in found], "clean codes flagged"
 
-    # Below MIN_LINES a tied voiceprint stays silent rather than letting wording decide.
+    # Below MIN_LINES wording must not decide — the tie is reported as an open question instead.
     short = main.store.start_session("now", "")
     for i in range(idiolect.MIN_LINES - 1):
         main.store.add_line(short, float(i), "S2", "zh", f"齁反正第{i}句啦", {})
     main.store.save_voiceprint(short, "S2", np.array([1.0, 0.0, 0.0], dtype=np.float32).tobytes())
     main.store.remember_speaker("口頭禪甲", np.array([1.0, 0.0, 0.0], dtype=np.float32).tobytes())
     main.store.remember_speaker("口頭禪乙", np.array([1.0, 0.02, 0.0], dtype=np.float32).tobytes())
-    assert "S2" not in client.get(f"/api/sessions/{short}/speakers/suggestions").json(), \
-        "under MIN_LINES wording is a coin flip and must not break the tie"
+    hint = client.get(f"/api/sessions/{short}/speakers/suggestions").json()["S2"]
+    assert hint["basis"] == "unsure", "under MIN_LINES wording is a coin flip and must not decide"
+    assert {hint["name"], hint["alternative"]["name"]} == {"口頭禪甲", "口頭禪乙"}, hint
 
     for name in ("口頭禪甲", "口頭禪乙"):
         main.store.forget_speaker(name)

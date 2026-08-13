@@ -74,6 +74,8 @@
     "suggestApplyHint": "Dưới ngưỡng tự đặt tên — chỉ là gợi ý. Nhấp để dùng tên này.",
     "suggestByWording": "cách nói",
     "suggestApplyHintWording": "Vân giọng không phân biệt được; đây là phán đoán dựa trên thói quen dùng từ của người này (câu cửa miệng, từ đệm). Hãy nghe thử trước khi áp dụng.",
+    "suggestUnsure": "chưa chắc",
+    "suggestApplyHintUnsure": "Vân giọng không phân biệt được hai người này — hãy nghe thử mẫu của từng người trước khi quyết định áp dụng tên nào.",
     "suggestPlayHint": "Phát mẫu giọng đã học của {{name}} để so với người nói này.",
     "fragmentHint": "Người nói này chỉ có vài câu rời rạc, mỗi câu đều nằm sát chỗ đổi người nói — mẫu giọng có thể lẫn giọng người khác. Hãy xem bản ghi rồi gộp vào đúng người thay vì đặt tên.",
     "refining": "Đang tinh chỉnh",
