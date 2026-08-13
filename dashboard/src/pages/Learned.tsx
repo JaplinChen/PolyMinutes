@@ -62,10 +62,19 @@ export function Learned() {
     }
   };
 
+  // The server orders speakers by meeting count, and deleting or reassigning a sample changes
+  // the counts — re-sorting mid-edit would yank the row out from under the cursor. Responses
+  // keep the order already on screen; names not shown yet append at the end.
+  const stableOrder = (prev: KnownSpeaker[], next: KnownSpeaker[]) => {
+    const pos = new Map(prev.map((s, i) => [s.name, i]));
+    return [...next].sort((a, b) => (pos.get(a.name) ?? prev.length) - (pos.get(b.name) ?? prev.length));
+  };
+
   const deleteClip = async (name: string, session: number) => {
     setBusy(true);
     try {
-      setSpeakers(await appApi.deleteSpeakerClip(name, session));
+      const next = await appApi.deleteSpeakerClip(name, session);
+      setSpeakers(prev => stableOrder(prev, next));
     } catch (err) {
       fail(err);
     } finally {
@@ -76,7 +85,8 @@ export function Learned() {
   const reassignClip = async (name: string, session: number, target: string) => {
     setBusy(true);
     try {
-      setSpeakers(await appApi.reassignSpeakerClip(name, session, target));
+      const next = await appApi.reassignSpeakerClip(name, session, target);
+      setSpeakers(prev => stableOrder(prev, next));
     } catch (err) {
       fail(err);
     } finally {
