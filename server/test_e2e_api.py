@@ -370,6 +370,75 @@ def test_correcting_a_misnamed_speaker_unlearns_the_polluting_print(client: Test
     client.delete(f"/api/speakers/known/{quote(B)}")
 
 
+def test_deleting_a_sample_undoes_what_that_meeting_taught(client: TestClient) -> None:
+    """Removing one bad sample withdraws that meeting's naming, unlearns the print it taught, and
+    drops the harvested clip — the other meetings' evidence for the voice is untouched."""
+    NAME = "審查刪樣本"
+    v_good = np.array([1.0, 0.0], "float32").tobytes()
+    v_bad = np.array([0.0, 1.0], "float32").tobytes()
+
+    old = main.store.start_session("2026-05-01T09:00:00", "del-a.wav")
+    main.store.add_line(old, 1.0, "S1", "zh", "好樣本的一句話", {}, end_time=4.0)
+    main.store.save_voiceprint(old, "S1", v_good)
+    client.put(f"/api/sessions/{old}/speakers", json={"S1": NAME})
+
+    bad = main.store.start_session("2026-05-02T09:00:00", "del-b.wav")
+    main.store.add_line(bad, 1.0, "S1", "zh", "壞樣本的一句話", {}, end_time=4.0)
+    main.store.save_voiceprint(bad, "S1", v_bad)
+    client.put(f"/api/sessions/{bad}/speakers", json={"S1": NAME})
+    main.store.save_speaker_clip(NAME, bad, b"harvested")
+
+    assert [sid for sid, _ in main.store.speaker_clip_sources(NAME)] == [bad, old]
+    r = client.delete(f"/api/speakers/known/{NAME}/clip", params={"idx": 0})
+    assert r.status_code == 200, r.text
+
+    assert main.store.speaker_names(bad) == {}          # the naming is withdrawn
+    prints = main.store.known_voiceprints()
+    assert (NAME, v_bad) not in prints, prints          # what it taught is unlearned
+    assert (NAME, v_good) in prints, prints             # the other meeting's variant survives
+    assert main.store.stored_clip(NAME, bad) is None    # the harvested clip is gone
+    assert main.store.speaker_clip_sources(NAME) == [(old, False)]
+
+    assert client.delete(f"/api/speakers/known/{NAME}/clip", params={"idx": 9}).status_code == 404
+    client.delete(f"/api/speakers/known/{NAME}")
+
+
+def test_reassigning_a_sample_hands_the_meeting_to_the_right_name(client: TestClient) -> None:
+    """The same undo, but the naming, the learned print and the harvested clip all move to the
+    person the sample actually belongs to."""
+    NAME, NEW = "審查改樣甲", "審查改樣乙"
+    v_keep = np.array([1.0, 0.0], "float32").tobytes()
+    v_move = np.array([0.0, 1.0], "float32").tobytes()
+
+    keep = main.store.start_session("2026-06-01T09:00:00", "re-a.wav")
+    main.store.add_line(keep, 1.0, "S1", "zh", "留下的一句話", {}, end_time=4.0)
+    main.store.save_voiceprint(keep, "S1", v_keep)
+    client.put(f"/api/sessions/{keep}/speakers", json={"S1": NAME})
+
+    move = main.store.start_session("2026-06-02T09:00:00", "re-b.wav")
+    main.store.add_line(move, 1.0, "S1", "zh", "改派的一句話", {}, end_time=4.0)
+    main.store.save_voiceprint(move, "S1", v_move)
+    client.put(f"/api/sessions/{move}/speakers", json={"S1": NAME})
+    main.store.save_speaker_clip(NAME, move, b"harvested")
+
+    assert client.put(f"/api/speakers/known/{NAME}/clip", params={"idx": 0},
+                      json={"name": ""}).status_code == 400
+    r = client.put(f"/api/speakers/known/{NAME}/clip", params={"idx": 0}, json={"name": NEW})
+    assert r.status_code == 200, r.text
+
+    assert main.store.speaker_names(move) == {"S1": NEW}   # the naming moved
+    prints = main.store.known_voiceprints()
+    assert (NEW, v_move) in prints, prints                 # the right person learned the voice
+    assert (NAME, v_move) not in prints, prints            # the wrong one unlearned it
+    assert (NAME, v_keep) in prints, prints                # the other meeting stays theirs
+    assert main.store.stored_clip(NEW, move) == b"harvested"
+    assert main.store.speaker_clip_sources(NAME) == [(keep, False)]
+    assert main.store.speaker_clip_sources(NEW) == [(move, False)]
+
+    client.delete(f"/api/speakers/known/{NAME}")
+    client.delete(f"/api/speakers/known/{NEW}")
+
+
 def test_forgetting_a_speaker_leaves_no_count_behind(client: TestClient) -> None:
     """forget_speaker drops the voice from known_speaker but keeps its historical transcript names.
 

@@ -639,8 +639,12 @@ def test_unnamed_speaker_can_be_heard_before_naming(client: TestClient) -> None:
     assert len(heard) == main.CLIP_SECONDS * rate, len(heard)
 
     # Which line it picked cannot be heard — the fixture is silence — so assert it directly:
-    # the 8-second utterance at 12.0s, not the 0.4-second "謝謝" that comes first.
-    assert main.store.session_speaker_sample(session, "S1") == (str(wav), 12.0, 8.0)
+    # the 8-second utterance at 12.0s, not the 0.4-second "謝謝" that comes first. Its head is
+    # shaved by SAMPLE_EDGE_TRIM: the line follows S2, and a handover edge is where the other
+    # voice sits.
+    got = main.store.session_speaker_sample(session, "S1")
+    assert got is not None and got[0] == str(wav)
+    assert (round(got[1], 3), round(got[2], 3)) == (12.6, 7.4)
 
     assert client.get(f"/api/sessions/{session}/speakers/S2/clip").status_code == 200
     assert client.get(f"/api/sessions/{session}/speakers/S9/clip").status_code == 404
@@ -664,8 +668,9 @@ def test_a_sample_never_runs_past_the_utterance_it_came_from(client: TestClient)
     main.store.add_line(session, 2.0, "S1", "zh", "好 沒問題", {}, end_time=4.0)
     main.store.add_line(session, 4.1, "S2", "zh", "接下來換我報告這一段", {}, end_time=12.0)
 
+    # 1.5s, not 2.0: S2 speaks right after, so the tail edge is shaved (capped at span/4).
     heard, rate = sf.read(io.BytesIO(client.get(f"/api/sessions/{session}/speakers/S1/clip").content))
-    assert len(heard) == 2.0 * rate, f"{len(heard)/rate}s played of a 2s utterance"
+    assert len(heard) == 1.5 * rate, f"{len(heard)/rate}s played of a 2s utterance"
 
     # The long one is still capped at CLIP_SECONDS: the question is whose voice, not what was said.
     heard, rate = sf.read(io.BytesIO(client.get(f"/api/sessions/{session}/speakers/S2/clip").content))

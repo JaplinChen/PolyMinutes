@@ -220,6 +220,13 @@ export const appApi = {
       method: 'PUT',
       body: JSON.stringify({ language }),
     }),
+  deleteSpeakerClip: (name: string, idx: number) =>
+    request<KnownSpeaker[]>(`/speakers/known/${encodeURIComponent(name)}/clip?idx=${idx}`, { method: 'DELETE' }),
+  reassignSpeakerClip: (name: string, idx: number, target: string) =>
+    request<KnownSpeaker[]>(`/speakers/known/${encodeURIComponent(name)}/clip?idx=${idx}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name: target }),
+    }),
   setSpeakerDepartment: (name: string, department: string) =>
     request<KnownSpeaker[]>(`/speakers/known/${encodeURIComponent(name)}/department`, {
       method: 'PUT',

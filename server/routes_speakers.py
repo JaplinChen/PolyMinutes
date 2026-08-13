@@ -264,6 +264,52 @@ def get_speaker_clip(name: str, idx: int = 0) -> Response:
     return _clip(main.store.speaker_sample(name, session_id))
 
 
+@router.delete("/api/speakers/known/{name}/clip")
+def delete_known_speaker_clip(name: str, idx: int = 0) -> list[dict]:
+    """Drop one bad sample: undo the meeting that taught it, not just hide the audio.
+
+    A sample sounds wrong because that meeting named somebody else's code as this person, and
+    remember_speaker already learned the polluted print. So deleting the sample withdraws the
+    naming and unlearns what it taught, then removes the harvested clip. For a meeting already
+    deleted (stored clip), codes and voiceprints are gone with the session, so the loops are
+    naturally empty and only the clip row goes.
+    """
+    sources = main.store.speaker_clip_sources(name)
+    if idx >= len(sources):
+        raise HTTPException(404, "no such sample")
+    session_id, _ = sources[idx]
+    for code in main.store.session_codes_for(name, session_id):
+        if old := main.store.voiceprint(session_id, code):
+            main.store.unlearn_speaker(name, old)
+    main.store.unname_speaker(session_id, name)
+    main.store.delete_speaker_clip(name, session_id)
+    return get_known_speakers()
+
+
+@router.put("/api/speakers/known/{name}/clip")
+def reassign_known_speaker_clip(name: str, body: dict, idx: int = 0) -> list[dict]:
+    """The same undo, but the sample belongs to somebody the room knows: hand it over.
+
+    The meeting's codes are renamed to the right person, each voiceprint is unlearned from the
+    wrong name and learned by the right one, and the harvested clip follows. Same session-deleted
+    caveat as deletion: with no codes left, only the clip row moves.
+    """
+    new = str(body.get("name", "")).strip()
+    if not new or new == name:
+        raise HTTPException(400, "target name required")
+    sources = main.store.speaker_clip_sources(name)
+    if idx >= len(sources):
+        raise HTTPException(404, "no such sample")
+    session_id, _ = sources[idx]
+    for code in main.store.session_codes_for(name, session_id):
+        main.store.set_speaker_name(session_id, code, new)
+        if centroid := main.store.voiceprint(session_id, code):
+            main.store.unlearn_speaker(name, centroid)
+            main.store.remember_speaker(new, centroid)
+    main.store.move_speaker_clip(name, session_id, new)
+    return get_known_speakers()
+
+
 @router.get("/api/sessions/{session_id}/speakers/{code}/clip")
 def get_session_speaker_clip(session_id: int, code: str) -> Response:
     """The same, for a speaker this meeting has not named yet.
