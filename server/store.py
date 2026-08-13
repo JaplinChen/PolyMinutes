@@ -502,6 +502,14 @@ class Store(SpeakerStore):
         if not wrong or not right or wrong == right:
             return
         with self._lock:
+            # A pair that inverts an existing rule means the two spellings flip on every pass —
+            # 首先→昨天 plus 昨天→首先 rewrites whichever one the speaker actually said. Both are
+            # noise from one-off edits, so learning the inverse forgets the original instead.
+            if self._db.execute("SELECT 1 FROM correction WHERE wrong=? AND right=?",
+                                (right, wrong)).fetchone():
+                self._db.execute("DELETE FROM correction WHERE wrong=?", (right,))
+                self._db.commit()
+                return
             self._db.execute(
                 "INSERT INTO correction (wrong, right, lang) VALUES (?,?,?) "
                 "ON CONFLICT(wrong) DO UPDATE SET right=excluded.right, count=correction.count + 1",

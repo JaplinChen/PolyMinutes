@@ -23,6 +23,13 @@ def test_diff_terms_learns_the_word_that_was_wrong() -> None:
     assert correct.diff_terms("一樣的內容", "一樣的內容") == []
 
 
+def test_diff_terms_never_learns_a_particle_as_the_wrong_side() -> None:
+    """的→裂痕, learned from one edit, rewrote every 的 in every later transcript. A wrong side
+    shorter than a term, or made only of particles, is a sentence fragment — never a rule."""
+    assert correct.diff_terms("有的問題", "有裂痕問題") == []
+    assert correct.diff_terms("就是了那個", "就是修模那個") == []
+
+
 def test_human_corrections_outrank_the_glossary() -> None:
     """An edit is the only thing here labelled by someone who was in the room."""
     c = correct.Corrector([], {"申管": "生管", "ELP系統": "ERP系統"})
