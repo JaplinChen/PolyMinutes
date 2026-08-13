@@ -275,12 +275,19 @@ def _clip_source(name: str, session: int) -> bool:
 
 
 @router.get("/api/speakers/known/{name}/clip")
-def get_speaker_clip(name: str, session: int) -> Response:
+def get_speaker_clip(name: str, session: int | None = None) -> Response:
     """A few seconds of the voice behind the name, so a wrong match is audible rather than guessed.
 
     `session` picks which meeting to hear it from — meetings still on disk are cut live,
-    deleted ones play the clip harvested when they were removed.
+    deleted ones play the clip harvested when they were removed. Omitted, it plays the newest:
+    callers like the naming screen's compare button just ask what this person sounds like, and
+    making the parameter mandatory silently muted them (their fetch 422'd into a catch).
     """
+    if session is None:
+        sources = main.store.speaker_clip_sources(name)
+        if not sources:
+            raise HTTPException(404, "no recording for this voice")
+        session = sources[0][0]
     if _clip_source(name, session):
         audio = main.store.stored_clip(name, session)
         if audio is None:
