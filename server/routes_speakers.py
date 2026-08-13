@@ -180,9 +180,11 @@ def get_known_speakers() -> list[dict]:
     depts = main.store.speaker_departments()
     return [{"name": name, "sessions": counts.get(name, 0), "language": langs.get(name, ""),
              "department": depts.get(name, ""),
-             # How many meetings this voice can still be heard from — live wavs plus clips
-             # harvested from deleted meetings, which is what the Learned page renders players for.
-             "clips": len(main.store.speaker_clip_sources(name))}
+             # The meetings this voice can still be heard from (newest first) — live wavs plus
+             # clips harvested from deleted meetings, which is what the Learned page renders
+             # players for. Session ids rather than a count: a positional index shifts when a
+             # sample is deleted, and the browser then replays the old audio for the same URL.
+             "clip_sessions": [sid for sid, _ in main.store.speaker_clip_sources(name)]}
             for name, _ in main.store.known_speakers()]
 
 
@@ -245,27 +247,35 @@ def _clip(sample: tuple[str, float, float | None] | None, seconds: float | None 
     return Response(audio, media_type="audio/wav")
 
 
+def _clip_source(name: str, session: int) -> bool:
+    """Whether the sample for this meeting is a harvested clip — 404 when there is none.
+
+    Samples are addressed by session id, not position: an index shifts when a sample is deleted,
+    and the browser, replaying the same URL, would serve the deleted voice's audio.
+    """
+    for session_id, stored in main.store.speaker_clip_sources(name):
+        if session_id == session:
+            return stored
+    raise HTTPException(404, "no such sample")
+
+
 @router.get("/api/speakers/known/{name}/clip")
-def get_speaker_clip(name: str, idx: int = 0) -> Response:
+def get_speaker_clip(name: str, session: int) -> Response:
     """A few seconds of the voice behind the name, so a wrong match is audible rather than guessed.
 
-    `idx` picks which meeting to hear it from, newest first — meetings still on disk are cut live,
+    `session` picks which meeting to hear it from — meetings still on disk are cut live,
     deleted ones play the clip harvested when they were removed.
     """
-    sources = main.store.speaker_clip_sources(name)
-    if idx >= len(sources):
-        raise HTTPException(404, "no recording for this voice")
-    session_id, stored = sources[idx]
-    if stored:
-        audio = main.store.stored_clip(name, session_id)
+    if _clip_source(name, session):
+        audio = main.store.stored_clip(name, session)
         if audio is None:
             raise HTTPException(404, "no recording for this voice")
         return Response(audio, media_type="audio/wav")
-    return _clip(main.store.speaker_sample(name, session_id))
+    return _clip(main.store.speaker_sample(name, session))
 
 
 @router.delete("/api/speakers/known/{name}/clip")
-def delete_known_speaker_clip(name: str, idx: int = 0) -> list[dict]:
+def delete_known_speaker_clip(name: str, session: int) -> list[dict]:
     """Drop one bad sample: undo the meeting that taught it, not just hide the audio.
 
     A sample sounds wrong because that meeting named somebody else's code as this person, and
@@ -274,20 +284,17 @@ def delete_known_speaker_clip(name: str, idx: int = 0) -> list[dict]:
     deleted (stored clip), codes and voiceprints are gone with the session, so the loops are
     naturally empty and only the clip row goes.
     """
-    sources = main.store.speaker_clip_sources(name)
-    if idx >= len(sources):
-        raise HTTPException(404, "no such sample")
-    session_id, _ = sources[idx]
-    for code in main.store.session_codes_for(name, session_id):
-        if old := main.store.voiceprint(session_id, code):
+    _clip_source(name, session)
+    for code in main.store.session_codes_for(name, session):
+        if old := main.store.voiceprint(session, code):
             main.store.unlearn_speaker(name, old)
-    main.store.unname_speaker(session_id, name)
-    main.store.delete_speaker_clip(name, session_id)
+    main.store.unname_speaker(session, name)
+    main.store.delete_speaker_clip(name, session)
     return get_known_speakers()
 
 
 @router.put("/api/speakers/known/{name}/clip")
-def reassign_known_speaker_clip(name: str, body: dict, idx: int = 0) -> list[dict]:
+def reassign_known_speaker_clip(name: str, body: dict, session: int) -> list[dict]:
     """The same undo, but the sample belongs to somebody the room knows: hand it over.
 
     The meeting's codes are renamed to the right person, each voiceprint is unlearned from the
@@ -297,16 +304,13 @@ def reassign_known_speaker_clip(name: str, body: dict, idx: int = 0) -> list[dic
     new = str(body.get("name", "")).strip()
     if not new or new == name:
         raise HTTPException(400, "target name required")
-    sources = main.store.speaker_clip_sources(name)
-    if idx >= len(sources):
-        raise HTTPException(404, "no such sample")
-    session_id, _ = sources[idx]
-    for code in main.store.session_codes_for(name, session_id):
-        main.store.set_speaker_name(session_id, code, new)
-        if centroid := main.store.voiceprint(session_id, code):
+    _clip_source(name, session)
+    for code in main.store.session_codes_for(name, session):
+        main.store.set_speaker_name(session, code, new)
+        if centroid := main.store.voiceprint(session, code):
             main.store.unlearn_speaker(name, centroid)
             main.store.remember_speaker(new, centroid)
-    main.store.move_speaker_clip(name, session_id, new)
+    main.store.move_speaker_clip(name, session, new)
     return get_known_speakers()
 
 
