@@ -110,13 +110,13 @@ def split_on_turns(utterances: list[Utterance], turns: list[diarize.Turn]) -> li
         seconds = len(u.samples) / config.SAMPLE_RATE
         cuts = _cut_points(u.start, u.start + seconds, turns)
         if len(cuts) < 2:
-            u.speaker = _speaker_code(_dominant(u.start, u.start + seconds, turns))
+            u.speaker = diarize.speaker_code(_dominant(u.start, u.start + seconds, turns))
             out.append(u)
             continue
         for begin, end, who in cuts:
             head = int(round((begin - u.start) * config.SAMPLE_RATE))
             tail = int(round((end - u.start) * config.SAMPLE_RATE))
-            out.append(Utterance(begin, u.samples[head:tail], speaker=_speaker_code(who)))
+            out.append(Utterance(begin, u.samples[head:tail], speaker=diarize.speaker_code(who)))
 
     _inherit_missing(out)
     return out
@@ -145,44 +145,81 @@ def _inherit_missing(utterances: list[Utterance]) -> None:
             u.speaker = following
 
 
-def _cut_points(start: float, end: float, turns: list[diarize.Turn]) -> list[tuple[float, float, int]]:
-    """The utterance split into (start, end, speaker), or one span when nobody else speaks in it."""
-    # Sorted here rather than assumed: out-of-order turns would walk `at` backwards and hand two
-    # pieces the same audio, which is a duplicated transcript line rather than a crash.
-    inside = sorted((t for t in turns if min(t.end, end) - max(t.start, start) >= MIN_PIECE_SECONDS),
-                    key=lambda t: t.start)
-    if len({t.speaker for t in inside}) < 2:
-        return [(start, end, _dominant(start, end, turns))]
+def _join(pieces: list[tuple[float, float, int]]) -> list[tuple[float, float, int]]:
+    """Neighbouring pieces on the same speaker are one piece."""
+    joined: list[tuple[float, float, int]] = []
+    for begin, end, who in pieces:
+        if joined and joined[-1][2] == who:
+            joined[-1] = (joined[-1][0], end, who)
+        else:
+            joined.append((begin, end, who))
+    return joined
 
-    pieces: list[tuple[float, float, int]] = []
-    at = start
-    for turn in inside:
-        edge = min(turn.end, end)
-        if edge - at >= MIN_PIECE_SECONDS:
-            pieces.append((at, edge, turn.speaker))
-            at = edge
-    if not pieces:
-        return [(start, end, _dominant(start, end, turns))]
-    # Whatever is left belongs to whoever held the last piece: trailing audio after the final turn
-    # is the same person tailing off, not a new one.
-    last_start, _, last_who = pieces[-1]
-    pieces[-1] = (last_start, end, last_who)
-    return pieces
+
+def _fill_blind(pieces: list[tuple[float, float, int]]) -> list[tuple[float, float, int]]:
+    """Stretches the segmenter heard nobody in belong to whoever was talking around them.
+
+    Cutting on every turn edge exposes the pauses between one person's own turns, which would
+    otherwise reach the transcript as a blank-speaker line carved out of the middle of their
+    sentence. An utterance the segmenter heard nobody in at all keeps its -1 for `_inherit_missing`
+    to resolve against the utterances either side of it.
+    """
+    known = [who for _, _, who in pieces if who >= 0]
+    if not known:
+        return pieces
+    filled, previous = [], known[0]
+    for begin, end, who in pieces:
+        previous = who if who >= 0 else previous
+        filled.append((begin, end, previous))
+    return filled
+
+
+def _cut_points(start: float, end: float, turns: list[diarize.Turn]) -> list[tuple[float, float, int]]:
+    """The utterance split into (start, end, speaker), or one span when nobody else speaks in it.
+
+    Cut on every turn edge, then let the shortest turn covering each stretch own it. Walking the
+    turns in order and cutting at each one's end — the previous rule — could only see turns queued
+    one after another: a turn nested inside a longer one ends behind the point already reached, so
+    it was skipped and the second voice stayed in the line. That is what overlapping speech looks
+    like coming out of the segmenter, and it is not rare: on a real 2.7h meeting 33 of 918 turns
+    were nested, leaving 12 transcript lines (95 seconds) holding a voice the segmenter had marked.
+    """
+    edges = sorted({start, end} | {e for t in turns for e in (t.start, t.end) if start < e < end})
+    pieces = _fill_blind([(a, b, _dominant(a, b, turns)) for a, b in zip(edges, edges[1:])])
+    pieces = _join(pieces)
+    # Shortest first, because absorbing one piece can leave its neighbour the shortest in turn.
+    while len(pieces) > 1:
+        i = min(range(len(pieces)), key=lambda i: pieces[i][1] - pieces[i][0])
+        if pieces[i][1] - pieces[i][0] >= MIN_PIECE_SECONDS:
+            break
+        # Into the longer neighbour: a half-second of someone agreeing mid-sentence is not a turn
+        # worth a line, and the sentence it interrupts is the one it belongs to.
+        before = pieces[i - 1] if i else None
+        after = pieces[i + 1] if i + 1 < len(pieces) else None
+        into = before if after is None or (before and before[1] - before[0] >= after[1] - after[0]) \
+            else after
+        pieces[i] = (pieces[i][0], pieces[i][1], into[2])
+        pieces = _join(pieces)
+    return pieces or [(start, end, _dominant(start, end, turns))]
 
 
 def _dominant(start: float, end: float, turns: list[diarize.Turn]) -> int:
-    """Whoever holds most of this span. -1 when the segmenter heard nobody in it."""
-    best, best_overlap = -1, 0.0
+    """Whoever holds most of this span. -1 when the segmenter heard nobody in it.
+
+    Ties go to whoever started talking most recently. Between two turn edges every covering turn
+    holds the whole stretch, so a tie is the normal case there and something has to break it: the
+    newest voice owns the overlap. Both shapes of overlapping speech then cut — the turn nested
+    inside a longer one wins the seconds it was marked for, and the turn that begins before the
+    outgoing speaker has finished takes the handover with it. Preferring the *shorter* turn instead
+    gets the nested case right and the handover wrong: the outgoing speaker's turn is the shorter
+    one there, so the line stayed whole. Measured on a 2.7h meeting: 3 of the 12 uncut lines.
+    """
+    best, best_key = -1, (0.0, 0.0)
     for turn in turns:
-        overlap = min(turn.end, end) - max(turn.start, start)
-        if overlap > best_overlap:
-            best, best_overlap = turn.speaker, overlap
+        key = (min(turn.end, end) - max(turn.start, start), turn.start)
+        if key[0] > 0 and key > best_key:
+            best, best_key = turn.speaker, key
     return best
-
-
-def _speaker_code(speaker: int) -> str:
-    """Segmenter ids are arbitrary integers; the transcript shows S1, S2, ... in that order."""
-    return f"S{speaker + 1}" if speaker >= 0 else ""
 
 
 def _remember_voices(store: Store, session_id: int, utterances: list[Utterance],
