@@ -114,6 +114,46 @@ def _speaker_barriers(store: Store, session_id: int) -> list[tuple[float, float,
     return [(t.start, t.end, diarize.speaker_code(t.speaker)) for t in found or ()]
 
 
+def _grouped_merge(store: Store, session_id: int, rows: list[dict],
+                   barriers: list[tuple[float, float, str]],
+                   chat: Callable[[str], str]) -> tuple[int, int]:
+    """Let the model say where the sentences end, over runs the arithmetic says could join.
+
+    The order used to be the wrong way round: a character counter picked the boundary, then the
+    model punctuated whatever it was handed and was forbidden from moving it. Measured on three
+    real meetings, that left 19 rows ending mid-sentence at exactly the 120-character limit, and of
+    40 adjacent same-speaker pairs the model judged 34 to be one unfinished sentence — against a
+    control of unrelated pairs it called 10 of 12 separate, so it is reading, not agreeing.
+
+    A run it cannot answer for falls through to the arithmetic below, unchanged. Returns
+    (fragments joined, runs the model answered).
+    """
+    joined = read = 0
+    for run in segment.candidate_runs(rows, barriers):
+        texts = [rows[i]["source"] for i in run]
+        try:
+            groups = segment.parse_groups(chat(segment.build_group_prompt(texts)), texts)
+        except jobs.Cancelled:
+            raise
+        except Exception:
+            log.exception("sentence grouping failed at line %d", rows[run[0]]["start"])
+            continue
+        if groups is None:
+            continue
+        read += 1
+        for offsets, text in groups:
+            keep = rows[run[offsets[0]]]
+            absorbed = [rows[run[o]] for o in offsets[1:]]
+            if absorbed:
+                _, end_time, translations = segment.join(keep, absorbed)
+                store.merge_lines(keep["id"], [r["id"] for r in absorbed], text, end_time,
+                                  translations)
+                joined += len(absorbed)
+            elif text != keep["source"]:
+                store.set_line_source(keep["id"], text)
+    return joined, read
+
+
 def _segment_stage(store: Store, session_id: int, chat: Callable[[str], str] | None) -> None:
     """Join the fragments the VAD cut mid-sentence, then have the model restore punctuation.
 
@@ -122,8 +162,14 @@ def _segment_stage(store: Store, session_id: int, chat: Callable[[str], str] | N
     merge is pure arithmetic and runs even with no LLM configured; only punctuation needs `chat`.
     """
     rows = store.lines(session_id)
+    barriers = _speaker_barriers(store, session_id)
+    if chat is not None:
+        joined, read = _grouped_merge(store, session_id, rows, barriers, chat)
+        if read:
+            log.info("segment stage: %d fragments joined by reading %d runs", joined, read)
+            rows = store.lines(session_id)
     joined = 0
-    for group in segment.merge_groups(rows, _speaker_barriers(store, session_id)):
+    for group in segment.merge_groups(rows, barriers):
         keep, absorbed = rows[group[0]], [rows[i] for i in group[1:]]
         text, end_time, translations = segment.join(keep, absorbed)
         store.merge_lines(keep["id"], [r["id"] for r in absorbed], text, end_time, translations)

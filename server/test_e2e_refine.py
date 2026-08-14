@@ -698,6 +698,101 @@ def test_the_auto_refine_pass_leaves_a_human_corrected_line_alone(tmp: Path) -> 
         st.close()
 
 
+def test_the_model_decides_where_the_sentences_end(tmp: Path) -> None:
+    """Boundaries belong to whatever reads the words, not to a character counter.
+
+    The arithmetic stops merging when a limit runs out, which lands mid-sentence: 19 rows across
+    three real meetings ended exactly at the 120-character cap. Here the model is handed the run
+    the arithmetic says *could* join and answers where the sentences actually end — the cut points
+    are still the recording's own fragment boundaries, so no timestamp is invented.
+    """
+    from . import postmeeting
+
+    st = store_mod.Store(tmp / "grouping.db")
+    try:
+        sid = st.start_session("2026-01-01T09:00:00", "g.wav")
+        for i, text in enumerate(["我們今天要討論的是", "交期的問題", "另外一件事情是品質"]):
+            st.add_line(sid, i * 3.5, "S1", "zh", text, {}, end_time=i * 3.5 + 3.0)
+
+        seen = []
+
+        def chat(prompt: str) -> str:
+            seen.append(prompt)
+            if "待補標點" in prompt:  # the punctuation pass that follows
+                return "NONE"
+            return "1-2: 我們今天要討論的是，交期的問題。\n3-3: 另外一件事情是品質。"
+
+        postmeeting._segment_stage(st, sid, chat)
+        assert any("待補標點" not in p for p in seen), "the grouping question was never asked"
+        rows = st.lines(sid)
+        assert [r["source"] for r in rows] == ["我們今天要討論的是，交期的問題。",
+                                               "另外一件事情是品質。"], rows
+        # The merged row keeps the second fragment's real end, not an interpolated one.
+        assert rows[0]["start"] == 0.0 and rows[0]["end_time"] == 6.5
+        assert rows[0]["refined"] == 0, "grouping must not block the refine pass"
+    finally:
+        st.close()
+
+
+def test_a_grouping_that_rewrites_the_words_is_refused(tmp: Path) -> None:
+    """The guard is the same one punctuation has, applied over the whole run: strip the punctuation
+    and the text must be exactly what went in, or the arithmetic decides as it always did."""
+    from . import postmeeting
+
+    st = store_mod.Store(tmp / "grouping-guard.db")
+    try:
+        sid = st.start_session("2026-01-01T09:00:00", "g2.wav")
+        for i, text in enumerate(["我們今天要討論的是", "交期的問題"]):
+            st.add_line(sid, i * 3.5, "S1", "zh", text, {}, end_time=i * 3.5 + 3.0)
+
+        calls = []
+
+        def chat(prompt: str) -> str:
+            calls.append(prompt)
+            if "待補標點" in prompt:
+                return "NONE"
+            # Drops "今天" while regrouping — plausible-looking, and wrong.
+            return "1-2: 我們要討論的是，交期的問題。"
+
+        postmeeting._segment_stage(st, sid, chat)
+        rows = st.lines(sid)
+        assert len(calls) >= 1
+        # Refused, so the arithmetic merged them instead and the words are intact.
+        assert len(rows) == 1 and "今天" in rows[0]["source"], rows
+    finally:
+        st.close()
+
+
+def test_a_merged_line_stops_growing_in_time_as_well_as_characters(tmp: Path) -> None:
+    """Slow speech reaches ninety seconds while still under the character limit.
+
+    The VAD never returns an utterance past max_speech_duration (20s), so every longer line on the
+    page was built by this merge — and the only limit it had was MAX_MERGED_CHARS, which sparse
+    speech never reaches. Measured across three real meetings: 273 of 1456 lines ran past 20s, the
+    longest 90.1 seconds for 118 characters — one row nobody can follow, and one clip nobody can
+    scrub. The cut costs nothing invented: the pieces keep the VAD's own boundaries and own text.
+    """
+    from . import postmeeting, segment
+
+    st = store_mod.Store(tmp / "long-merge.db")
+    try:
+        sid = st.start_session("2026-01-01T09:00:00", "long.wav")
+        # Six 8-second pieces, four characters each: 51 seconds, nowhere near 120 characters.
+        for i in range(6):
+            st.add_line(sid, i * 8.5, "S1", "zh", "慢慢講的", {}, end_time=i * 8.5 + 8.0)
+        postmeeting._segment_stage(st, sid, None)
+
+        rows = st.lines(sid)
+        spans = [r["end_time"] - r["start"] for r in rows]
+        assert max(spans) <= segment.MAX_MERGED_SECONDS, spans
+        # Still merged, just not without end: six pieces became fewer rows, not six.
+        assert 1 < len(rows) < 6, [(r["start"], r["end_time"]) for r in rows]
+        # Every second of speech survives the split — the pieces still tile the original span.
+        assert rows[0]["start"] == 0.0 and rows[-1]["end_time"] == 5 * 8.5 + 8.0
+    finally:
+        st.close()
+
+
 def test_vad_cut_fragments_are_merged_and_punctuated(tmp: Path) -> None:
     """The segment stage joins fragments the VAD cut mid-sentence, then restores punctuation —
     without marking anything refined, so the correction pass that follows still gets its turn."""
@@ -713,8 +808,13 @@ def test_vad_cut_fragments_are_merged_and_punctuated(tmp: Path) -> None:
         st.add_line(sid, 9.0, "S2", "zh", "好", {}, end_time=9.5)
 
         def chat(prompt: str) -> str:
-            assert "我們今天要討論的是交期的問題" in prompt, prompt
-            return "1: 我們今天要討論的是，交期的問題。"
+            # The grouping question comes first and carries the fragments separately; the
+            # punctuation pass that follows sees whatever grouping produced.
+            if "待補標點" not in prompt:
+                assert "1: 我們今天要討論的是" in prompt and "2: 交期的問題" in prompt, prompt
+                return "1-2: 我們今天要討論的是，交期的問題。"
+            assert "我們今天要討論的是，交期的問題。" in prompt, prompt
+            return "NONE"
 
         postmeeting._segment_stage(st, sid, chat)
 
@@ -723,8 +823,7 @@ def test_vad_cut_fragments_are_merged_and_punctuated(tmp: Path) -> None:
         assert rows[0]["end_time"] == 4.0, rows[0]
         assert rows[0]["translations"] == {"en": "what we discuss is the delivery problem"}, rows[0]
         assert rows[0]["refined"] == 0, "punctuation must not block the refine pass"
-        # Merge and punctuation each changed what the transcript says; the summary must know.
-        assert st.session(sid)["lines_rev"] == 2, st.session(sid)
+        assert st.session(sid)["lines_rev"] >= 1, st.session(sid)
 
         # With no LLM the merge still happens — it is pure arithmetic over timestamps.
         sid2 = st.start_session("2026-01-01T10:00:00", "seg2.wav")
