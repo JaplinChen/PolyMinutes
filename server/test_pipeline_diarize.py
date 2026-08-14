@@ -424,6 +424,37 @@ def test_a_brief_interjection_does_not_cost_a_line() -> None:
     assert pieces[0].speaker == "S1"
 
 
+def test_overlapping_speech_is_cut_in_both_of_its_shapes() -> None:
+    """Overlapping turns leave the second voice in the line unless the cut can see them.
+
+    Both shapes come out of the segmenter on a real 2.7h meeting, and cutting at each turn's end in
+    start order saw neither: the nested turn ends behind the point already reached, and the handover
+    turn is the one that has not ended yet. 12 lines (95 seconds) held a voice the segmenter had
+    already marked — including 636.5s–643.2s, two named people reading as one.
+    """
+    # Nested: someone speaks for 0.6s inside another's turn, long enough to be worth its own line.
+    nested = [diarize.Turn(0.0, 8.0, 0), diarize.Turn(3.0, 3.6, 1)]
+    pieces = postprocess.split_on_turns([_utterance(0.0, 8.0)], nested)
+    assert [p.speaker for p in pieces] == ["S1", "S2", "S1"], [(p.start, p.speaker) for p in pieces]
+    assert sum(len(p.samples) for p in pieces) == 8 * config.SAMPLE_RATE
+
+    # Handover: the next speaker starts before the current one stops, and runs past the utterance.
+    handover = [diarize.Turn(0.0, 8.0, 0), diarize.Turn(7.0, 20.0, 1)]
+    pieces = postprocess.split_on_turns([_utterance(0.0, 8.0)], handover)
+    assert [p.speaker for p in pieces] == ["S1", "S2"], [(p.start, p.speaker) for p in pieces]
+    assert pieces[1].start == 7.0
+
+
+def test_a_pause_inside_one_speakers_turns_is_not_a_cut() -> None:
+    """Cutting on every turn edge exposes the gaps between one person's own turns; splitting there
+    would carve a blank-speaker line out of the middle of their own sentence."""
+    turns = [diarize.Turn(0.0, 3.0, 2), diarize.Turn(5.0, 9.0, 2)]
+    pieces = postprocess.split_on_turns([_utterance(0.0, 9.0)], turns)
+
+    assert len(pieces) == 1, [(p.start, p.speaker) for p in pieces]
+    assert pieces[0].speaker == "S3"
+
+
 def test_splitting_covers_the_utterance_it_was_given() -> None:
     """Every second of audio has to land in exactly one piece: a gap is speech dropped from the
     transcript, an overlap is speech transcribed twice."""

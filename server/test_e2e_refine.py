@@ -736,6 +736,57 @@ def test_vad_cut_fragments_are_merged_and_punctuated(tmp: Path) -> None:
         st.close()
 
 
+def test_a_merge_does_not_close_over_somebody_elses_interruption(tmp: Path) -> None:
+    """A gap the other speaker was talking in is a speaker change, not a breath.
+
+    The splitter cuts where the segmenter heard the change, but a piece too short to decode leaves
+    no line, and the hole it leaves reads here exactly like a VAD cut. Merging across it puts two
+    people back on one line under one name — 6 of 14 cuts on a real 2.7h meeting, including the one
+    reported: 636.5s–643.2s, 林瓚文 and 吳仲琪 as a single 林瓚文 line.
+    """
+    import json
+
+    from . import config, postmeeting
+
+    st = store_mod.Store(tmp / "interruption.db")
+    wav = config.RECORDINGS_DIR / "interrupted.wav"
+    wav.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        # No audio needed — only the cached turns beside it, which is what the stage reads.
+        wav.write_bytes(b"")
+        turns = [[636.51, 639.20, 11], [639.20, 639.74, 18], [639.74, 643.18, 11]]
+        for path, key in ((wav.with_suffix(".wav.turns.json"), None),):
+            path.write_text(json.dumps({"key": key, "duration": 700.0, "turns": turns}),
+                            encoding="utf-8")
+
+        sid = st.start_session("2026-01-01T09:00:00", str(wav))
+        st.add_line(sid, 636.51, "S12", "zh", "他們有些自己請出來", {}, end_time=639.20)
+        st.add_line(sid, 639.74, "S12", "zh", "我們還是一樣先出去對", {}, end_time=643.18)
+
+        # A stale cache key means no barriers, and the merge behaves as it always did.
+        postmeeting._segment_stage(st, sid, None)
+        assert len(st.lines(sid)) == 1, "without turns the gap is still just a gap"
+
+        # The real cache, written under the key this recording hashes to.
+        from . import diarize
+        key = diarize._turns_key(wav, config.SPEAKER_THRESHOLD)
+        diarize._cache_path(wav).write_text(
+            json.dumps({"key": key, "duration": 700.0, "turns": turns}), encoding="utf-8")
+
+        sid2 = st.start_session("2026-01-01T10:00:00", str(wav))
+        st.add_line(sid2, 636.51, "S12", "zh", "他們有些自己請出來", {}, end_time=639.20)
+        st.add_line(sid2, 639.74, "S12", "zh", "我們還是一樣先出去對", {}, end_time=643.18)
+        postmeeting._segment_stage(st, sid2, None)
+
+        rows = st.lines(sid2)
+        assert len(rows) == 2, [(r["start"], r["source"]) for r in rows]
+    finally:
+        st.close()
+        diarize._cache_path(wav).unlink(missing_ok=True)
+        wav.with_suffix(".wav.turns.json").unlink(missing_ok=True)
+        wav.unlink(missing_ok=True)
+
+
 def test_a_punctuation_batch_that_fails_once_is_retried(tmp: Path) -> None:
     """LLM 批次偶發失敗（超時、壞 JSON）一次就丟掉整批太浪費——重試一次通常就過。"""
     from . import postmeeting

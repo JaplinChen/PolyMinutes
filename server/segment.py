@@ -13,6 +13,7 @@ changed any word is discarded whole.
 from __future__ import annotations
 
 import re
+from typing import Sequence
 
 from .refine import NUMBERED
 
@@ -25,11 +26,32 @@ MAX_MERGED_CHARS = 120
 # A fragment already ending in one of these finished its sentence; joining across it would glue
 # two complete sentences together.
 TERMINAL = "。．.！!？?…"
+# Somebody else holding the floor for this long inside a gap makes it a speaker change rather than
+# a VAD cut. Matched to the shortest piece the splitter will carve out, so the two stages agree on
+# what counts as a turn.
+MIN_INTERRUPTION = 0.5
 
 WORD = re.compile(r"\w+", re.UNICODE)
 
 
-def _joinable(prev: dict, nxt: dict, length: int) -> bool:
+Barriers = Sequence[tuple[float, float, str]]
+
+
+def _interrupted(prev: dict, nxt: dict, barriers: Barriers) -> bool:
+    """True when somebody else held the floor in the gap between these two lines.
+
+    A gap is not evidence of silence. The splitter cuts an utterance wherever the segmenter heard a
+    speaker change, and a piece too short to decode leaves no line behind — so an interruption the
+    recogniser had no words for reaches this stage looking exactly like a breath, and welds two
+    lines back over the top of it. On a real 2.7h meeting that undid 6 of the 14 cuts, including a
+    line two people were visibly speaking in.
+    """
+    return any(who != prev["speaker"]
+               and min(end, nxt["start"]) - max(start, prev["end_time"]) >= MIN_INTERRUPTION
+               for start, end, who in barriers)
+
+
+def _joinable(prev: dict, nxt: dict, length: int, barriers: Barriers = ()) -> bool:
     if prev["speaker"] != nxt["speaker"] or prev["lang"] != nxt["lang"]:
         return False
     # A failed decode or a human-corrected line is not raw VAD output; leave both where they are.
@@ -41,20 +63,28 @@ def _joinable(prev: dict, nxt: dict, length: int) -> bool:
         return False
     if nxt["start"] - prev["end_time"] > MAX_GAP:
         return False
+    if _interrupted(prev, nxt, barriers):
+        return False
     text = prev["source"].rstrip()
     if not text or text[-1] in TERMINAL:
         return False
     return length + len(nxt["source"]) <= MAX_MERGED_CHARS
 
 
-def merge_groups(rows: list[dict]) -> list[list[int]]:
-    """Runs of consecutive lines that are one sentence the VAD cut. Only runs of 2+ come back."""
+def merge_groups(rows: list[dict], barriers: Barriers = ()) -> list[list[int]]:
+    """Runs of consecutive lines that are one sentence the VAD cut. Only runs of 2+ come back.
+
+    `barriers` are (start, end, code) spans the segmenter heard a speaker in; a gap holding one of
+    somebody else is a speaker change and not a cut to undo. Empty for a recording processed
+    without the segmentation model, which leaves the merge exactly as it was.
+    """
     groups: list[list[int]] = []
     i = 0
     while i < len(rows):
         group = [i]
         length = len(rows[i]["source"])
-        while (j := group[-1] + 1) < len(rows) and _joinable(rows[group[-1]], rows[j], length):
+        while (j := group[-1] + 1) < len(rows) and _joinable(rows[group[-1]], rows[j], length,
+                                                             barriers):
             group.append(j)
             length += len(rows[j]["source"])
         if len(group) > 1:

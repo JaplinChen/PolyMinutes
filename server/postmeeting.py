@@ -25,7 +25,7 @@ import threading
 import time
 from typing import Callable
 
-from . import jobs, llm, refine, segment, summarize
+from . import config, diarize, jobs, llm, refine, segment, summarize
 from .store import Store
 
 log = logging.getLogger("polyminutes.postmeeting")
@@ -100,6 +100,20 @@ def _cancellable(chat: Callable[[str], str], cancel: threading.Event) -> Callabl
     return wrapped
 
 
+def _speaker_barriers(store: Store, session_id: int) -> list[tuple[float, float, str]]:
+    """Where the segmenter heard each speaker, so the merge knows a gap from an interruption.
+
+    Read from the cache the transcript was derived with, never recomputed: a recording processed
+    without the segmentation model — or before this cache existed — simply has no barriers, and the
+    merge behaves as it did before.
+    """
+    session = store.session(session_id)
+    if not session or not session["wav_path"]:
+        return []
+    found = diarize.cached_turns(config.recording_path(session["wav_path"]))
+    return [(t.start, t.end, diarize.speaker_code(t.speaker)) for t in found or ()]
+
+
 def _segment_stage(store: Store, session_id: int, chat: Callable[[str], str] | None) -> None:
     """Join the fragments the VAD cut mid-sentence, then have the model restore punctuation.
 
@@ -109,7 +123,7 @@ def _segment_stage(store: Store, session_id: int, chat: Callable[[str], str] | N
     """
     rows = store.lines(session_id)
     joined = 0
-    for group in segment.merge_groups(rows):
+    for group in segment.merge_groups(rows, _speaker_barriers(store, session_id)):
         keep, absorbed = rows[group[0]], [rows[i] for i in group[1:]]
         text, end_time, translations = segment.join(keep, absorbed)
         store.merge_lines(keep["id"], [r["id"] for r in absorbed], text, end_time, translations)

@@ -316,6 +316,20 @@ def _cache_path(wav: Path) -> Path:
     return wav.with_suffix(wav.suffix + ".turns.json")
 
 
+def speaker_code(speaker: int) -> str:
+    """Segmenter ids are arbitrary integers; the transcript shows S1, S2, ... in that order."""
+    return f"S{speaker + 1}" if speaker >= 0 else ""
+
+
+def cached_turns(wav: Path) -> list[Turn] | None:
+    """The turns already worked out for this recording, or None — never computes them.
+
+    For the stages that run after the transcript exists and only want to know where the speaker
+    changed. `turns()` would spend eight minutes rebuilding an answer they can do without.
+    """
+    return _read_turns(wav, _turns_key(wav, config.SPEAKER_THRESHOLD)) if wav.is_file() else None
+
+
 def _read_turns(wav: Path, key: str) -> list[Turn] | None:
     path = _cache_path(wav)
     try:
