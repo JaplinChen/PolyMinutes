@@ -733,6 +733,46 @@ def test_a_sample_avoids_the_longest_line_and_plays_the_middle(client: TestClien
     main.store.delete_session(session)
 
 
+def test_a_sample_slides_off_an_interruption_inside_the_line(client: TestClient) -> None:
+    """The clip must dodge a voice the splitter deliberately left in the line.
+
+    Every other rule here compares a line against its neighbours, so an interruption *inside* one is
+    invisible to all of them — and under MIN_PIECE_SECONDS the splitter folds such a turn away
+    rather than spend a transcript line on it, which is right for reading and wrong for a clip whose
+    only job is one voice. Measured on a real meeting: a 0.44s interruption 3.6s into the chosen
+    line landed inside the four seconds played, and the naming screen asked whose voice it was.
+    """
+    import json
+
+    import soundfile as sf
+
+    from . import diarize
+
+    wav = config.RECORDINGS_DIR / "interruption-inside.wav"
+    wav.parent.mkdir(parents=True, exist_ok=True)
+    # Loud only where the other speaker is, so a clip holding him is audible as a nonzero mean.
+    audio = np.zeros(config.SAMPLE_RATE * 30, dtype="float32")
+    audio[int(config.SAMPLE_RATE * 15.4):int(config.SAMPLE_RATE * 15.9)] = 1.0
+    sf.write(str(wav), audio, config.SAMPLE_RATE)
+    diarize._cache_path(wav).write_text(json.dumps({
+        "key": diarize._turns_key(wav, config.SPEAKER_THRESHOLD), "duration": 30.0,
+        # S1 holds the whole line; somebody else interrupts for 0.5s, 5.4s in.
+        "turns": [[10.0, 20.0, 0], [15.4, 15.9, 1]]}), encoding="utf-8")
+
+    session = main.store.start_session("now", str(wav))
+    main.store.add_line(session, 10.0, "S1", "zh", "被插話打斷的十秒句", {}, end_time=20.0)
+    try:
+        heard, rate = sf.read(io.BytesIO(
+            client.get(f"/api/sessions/{session}/speakers/S1/clip").content))
+        assert len(heard) == main.CLIP_SECONDS * rate
+        # The centred cut would have run 13.0s-17.0s and carried the interruption whole.
+        assert float(np.abs(heard).mean()) == 0.0, "the clip still holds the other voice"
+    finally:
+        main.store.delete_session(session)
+        diarize._cache_path(wav).unlink(missing_ok=True)
+        wav.unlink(missing_ok=True)
+
+
 def test_a_sample_prefers_mid_monologue_over_a_speaker_boundary(client: TestClient) -> None:
     """A line flanked by other speakers sits exactly where a missed turn leaves their voice in it.
 

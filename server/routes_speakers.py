@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import io
+from pathlib import Path
 
 import numpy as np
 import soundfile as sf
 from fastapi import APIRouter, HTTPException, Response
 
-from . import config, idiolect, main, speakers
+from . import config, diarize, idiolect, main, postprocess, speakers
 
 router = APIRouter()
 
@@ -273,6 +274,39 @@ def get_known_speakers() -> list[dict]:
             for name, _ in main.store.known_speakers()]
 
 
+def _quietest_window(wav: Path, start: float, span: float, seconds: float) -> float:
+    """Where inside this utterance to cut, so the clip holds one voice.
+
+    The middle is the right guess when nothing is known, but the segmenter usually knows better:
+    an interruption *inside* a line is invisible to every rule the sample picker has, because those
+    compare a line against its neighbours. The line is chosen away from speaker boundaries and its
+    edges are shaved, and the naming clip still opens on somebody else — measured on a real
+    meeting, a 0.44s interruption sat 3.6s into the chosen line, inside the four seconds played.
+    Under MIN_PIECE_SECONDS the splitter folds such a turn away rather than spend a line on it,
+    which is right for the transcript and exactly wrong for a clip whose only job is one voice.
+
+    So slide the window to wherever the other voices overlap it least, falling back to the middle
+    when they overlap everywhere equally — or when there are no turns to read.
+    """
+    middle = start + (span - seconds) / 2
+    turns = diarize.cached_turns(wav)
+    if not turns:
+        return middle
+    end = start + span
+    mine = postprocess._dominant(start, end, turns)
+    theirs = [(t.start, t.end) for t in turns
+              if t.speaker != mine and min(t.end, end) - max(t.start, start) > 0]
+    if not theirs:
+        return middle
+    # Every position a foreign turn stops mattering at: its edges, plus the utterance's own.
+    offsets = {start, middle, end - seconds}
+    offsets |= {edge for a, b in theirs for edge in (b, a - seconds)}
+    def intrusion(at: float) -> tuple[float, float]:
+        overlap = sum(max(0.0, min(b, at + seconds) - max(a, at)) for a, b in theirs)
+        return (round(overlap, 3), abs(at - middle))
+    return min({min(max(o, start), end - seconds) for o in offsets}, key=intrusion)
+
+
 def clip_bytes(sample: tuple[str, float, float | None], seconds: float | None = None) -> bytes | None:
     """The same slice as _clip, as raw WAV bytes — None when the recording is missing.
 
@@ -280,14 +314,14 @@ def clip_bytes(sample: tuple[str, float, float | None], seconds: float | None = 
     removed, without fabricating an HTTP response to unwrap.
     """
     wav_path, start, span = sample
+    wav = config.recording_path(wav_path)
     if seconds is None:
         seconds = min(main.CLIP_SECONDS, span) if span else main.CLIP_SECONDS
         if span and span > seconds:
             # The middle of the utterance, not its head: when the segmenter missed a turn, the
             # other voice sits at the edges — the head is the previous speaker finishing. A line
             # clip passes explicit seconds and is untouched; hearing the whole line is its point.
-            start += (span - seconds) / 2
-    wav = config.recording_path(wav_path)
+            start = _quietest_window(wav, start, span, seconds)
     if not wav.is_file():
         return None
     with sf.SoundFile(wav) as f:
