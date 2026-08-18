@@ -68,6 +68,15 @@ BEAM_SIZE = 5
 # Vietnamese, scores far below this. Tune against real audio with `scripts.eval_harness`.
 NO_SPEECH_MAX = 0.85
 
+# Greedy, single attempt. faster-whisper defaults to a temperature ladder [0, 0.2 ... 1.0]: when a
+# decode trips its own compression-ratio or logprob check it re-rolls at a higher temperature and
+# keeps re-rolling until something passes. On real speech that rescues the occasional segment; on
+# the silence between speakers there is nothing to decode, so every re-roll is the model inventing
+# text more freely than the last, and the thing it invents is its training data's subtitle
+# boilerplate. Pinning to a scalar disables the ladder — a segment that fails now comes back as it
+# was decoded once, and the no-speech gate above throws it away.
+TEMPERATURE = 0.0
+
 
 def _spoken(seg) -> bool:
     """False for a segment the decoder is near-certain is silence — a hallucinated line in a gap."""
@@ -194,6 +203,7 @@ class Transcriber:
             try:
                 return self._batched.transcribe(
                     audio, language=language or None, beam_size=BEAM_SIZE,
+                    temperature=TEMPERATURE,
                     batch_size=batch, vad_filter=False, clip_timestamps=spans,
                     hotwords=self._hotwords or None, condition_on_previous_text=False,
                 )
@@ -231,6 +241,7 @@ class Transcriber:
             samples.astype(np.float32),
             language=language or None,  # None means detect
             beam_size=BEAM_SIZE,
+            temperature=TEMPERATURE,
             # Hotwords are the biasing sherpa-onnx cannot do for Whisper at all.
             hotwords=self._hotwords or None,
             condition_on_previous_text=False,  # one VAD utterance at a time carries no history

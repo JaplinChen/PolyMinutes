@@ -27,6 +27,14 @@ log = logging.getLogger("polyminutes.postprocess")
 
 # Utterances a speaker must have before their own language statistics outweigh the meeting's.
 MIN_LANGUAGE_EVIDENCE = 4
+# A speaker whose language disagrees with the meeting's needs this share of the meeting's lines
+# before that disagreement is believed. Four lines is enough to settle zh against zh-yue; it is not
+# enough to declare an English speaker in a Chinese meeting, because the clusters that do that are
+# not people. Measured on a 2h19m Mandarin factory meeting: three speakers held nothing but
+# English — 5, 9 and 11 lines of "Thank you for watching" and "Each police officer" — and each
+# cleared the flat bar of four, certified itself English, and was never re-decoded. A participant
+# who really does speak English says more than 1.8% of a meeting.
+MIN_MINORITY_SHARE = 0.05
 # Utterances handed to the recogniser at once. Long enough to amortise the encoder, short enough
 # that an interrupted run has reported most of what it did.
 BATCH_UTTERANCES = 64
@@ -320,9 +328,17 @@ def dominant_languages(utterances: list[Utterance]) -> dict[str, str]:
     if not overall:
         return {}
     meeting = max(overall, key=overall.get)
-    return {code: (max(langs, key=langs.get) if sum(langs.values()) >= MIN_LANGUAGE_EVIDENCE
-                   else meeting)
-            for code, langs in counts.items() if langs}
+    floor = sum(overall.values()) * MIN_MINORITY_SHARE
+    return {code: _majority(langs, meeting, floor) for code, langs in counts.items() if langs}
+
+
+def _majority(langs: dict[str, int], meeting: str, floor: float) -> str:
+    best = max(langs, key=langs.get)
+    if sum(langs.values()) < MIN_LANGUAGE_EVIDENCE:
+        return meeting
+    if best != meeting and langs[best] < floor:
+        return meeting
+    return best
 
 
 def transcribe_all(utterances: list[Utterance], transcriber: asr.Transcriber,

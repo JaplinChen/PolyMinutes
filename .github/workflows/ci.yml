@@ -24,8 +24,16 @@ jobs:
 
       # sounddevice binds PortAudio at import time, so importing anything under server/
       # fails on a bare runner without it.
+      # timeout + retries: this step hung twice on 2026-08-18, apt-get update waiting forever on
+      # an unresponsive mirror while the rest of a 60-second workflow sat pending behind it.
+      # Failing in 5 minutes and retrying beats discovering the hang at the 6-hour job limit.
+      # The runner's azure.archive.ubuntu.com mirror was down on 2026-08-18 and apt spent the
+      # whole timeout re-trying it, so point sources at the main archive before updating.
       - name: Install PortAudio
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libportaudio2
+        timeout-minutes: 5
+        run: |
+          sudo sed -i 's|http://azure.archive.ubuntu.com|https://archive.ubuntu.com|g' /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list 2>/dev/null || true
+          sudo apt-get -o Acquire::Retries=3 update && sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends libportaudio2
 
       - name: Install dependencies
         run: |

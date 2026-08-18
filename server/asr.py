@@ -61,6 +61,8 @@ def is_degenerate(text: str) -> bool:
     characters far more than Chinese does, are judged on the same scale.
     """
     tokens = _CJK_OR_WORD.findall(text)
+    if len(set(tokens)) == 1 and len(tokens) >= 5:
+        return True  # one token, over and over: YAMAHA YAMAHA YAMAHA YAMAHA YAMAHA
     if len(tokens) < 8:
         return False  # too short to tell repetition from a genuinely terse utterance
     return len(set(tokens)) / len(tokens) < 0.3
@@ -72,7 +74,12 @@ def is_degenerate(text: str) -> bool:
 # "subscribe" or "訂閱", but not "subscribe to our channel".
 _HALLUCINATIONS = re.compile(
     r"đăng ký kênh|theo dõi và (hẹn|đăng)|hẹn gặp lại|subscribe cho kênh|la la school"
-    r"|thanks for watching|subscribe to (our|the) channel|please subscribe"
+    r"|thank(s| you) for watching|subscribe to (our|the) channel|please subscribe"
+    # Whole line only. Whisper answers silence with a bare sign-off; a participant thanking
+    # someone says what for, so a line that is nothing but the thanks is the decoder talking.
+    r"|^thank you( very much)?[.!]?$|^see you next time[.!]?$"
+    # The bell icon exists only on YouTube.
+    r"|小鈴鐺"
     r"|訂閱(我們的)?頻道|點選訂閱|歡迎訂閱|請不吝|點贊|打賞|明鏡|點點欄目"
     # Subtitling credits and sign-offs, all of them from the same training data. Seen on seven
     # real interviews, where they arrive in the silence between speakers.
