@@ -34,6 +34,26 @@ def test_a_speaker_needs_evidence_before_setting_their_own_language() -> None:
     assert postprocess.dominant_languages([]) == {}
 
 
+def test_a_phantom_english_speaker_does_not_outvote_a_chinese_meeting() -> None:
+    """Straight off session 5: a 2h19m Mandarin meeting where three clusters held nothing but
+    English hallucinations — 5, 9 and 11 lines each. Every one cleared the flat four-line bar,
+    certified itself English, and so was never re-decoded under the language actually spoken.
+    """
+    def said(speaker: str, lang: str) -> postprocess.Utterance:
+        return postprocess.Utterance(0.0, np.zeros(1, dtype="float32"), speaker, lang, "x")
+
+    meeting = ([said("S10", "zh")] * 570 + [said("S2", "en")] * 5
+               + [said("S11", "en")] * 9 + [said("S14", "en")] * 11)
+    dominant = postprocess.dominant_languages(meeting)
+    assert dominant["S10"] == "zh"
+    for phantom in ("S2", "S11", "S14"):
+        assert dominant[phantom] == "zh", phantom
+
+    # A participant who really does speak English still keeps it.
+    real = [said("S10", "zh")] * 570 + [said("S3", "en")] * 40
+    assert postprocess.dominant_languages(real)["S3"] == "en"
+
+
 def test_clustering_is_judged_by_speech_not_cluster_count() -> None:
     """Two speakers who each hold a real share of the meeting must not be merged.
 

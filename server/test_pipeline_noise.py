@@ -163,3 +163,16 @@ def test_the_new_sign_off_patterns_spare_a_factory_meeting() -> None:
                  "字幕提供給客戶的版本",
                  "謝謝大家 我們看一下這份報告"):
         assert not asr.is_hallucination(text), text
+
+
+def test_english_signoffs_and_single_token_collapse() -> None:
+    """Straight off a real transcript page: seven of eleven visible lines were these."""
+    for text in ("Thank you for watching!", "Thank you for watching. See you next time.",
+                 "Thank you very much.", "點選小鈴鐺,並按下小鈴鐺,才能收到最新訊息"):
+        assert asr.is_hallucination(text), text
+    # Thanks with a subject is someone talking.
+    assert not asr.is_hallucination("Thank you very much for the report")
+    assert not asr.is_hallucination("謝謝你幫我確認這個")
+
+    assert asr.is_degenerate("YAMAHA YAMAHA YAMAHA YAMAHA YAMAHA")
+    assert not asr.is_degenerate("YAMAHA YAMAHA")
