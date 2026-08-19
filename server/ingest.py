@@ -13,9 +13,33 @@ import re
 import shutil
 import subprocess
 import sys
+import time
+from datetime import datetime
 from pathlib import Path
 
 from . import config
+
+
+def meeting_time(name: str, src: Path | None = None) -> str:
+    """When the meeting happened, not when we got round to importing it.
+
+    A room recorder stamps its own filename — VPIC1-20260817_064921 — and that is the only record
+    of when people were actually in the room; the import clock says whichever evening someone
+    dragged the file in, which is what made a list of meetings unreadable. Falls back to the file's
+    own mtime, then to now.
+    """
+    if m := re.search(r"(\d{4})(\d{2})(\d{2})[_\-.]?(\d{2})(\d{2})(\d{2})", name):
+        y, mo, d, h, mi, se = (int(g) for g in m.groups())
+        try:
+            return datetime(y, mo, d, h, mi, se).strftime("%Y-%m-%dT%H:%M:%S")
+        except ValueError:
+            pass  # 20261332_999999 is a serial number that happens to look like a date.
+    if src:
+        try:
+            return time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(src.stat().st_mtime))
+        except OSError:
+            pass
+    return time.strftime("%Y-%m-%dT%H:%M:%S")
 
 
 def extract_audio(src: Path, dest: Path) -> None:

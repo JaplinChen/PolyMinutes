@@ -999,3 +999,20 @@ def test_wording_identifies_a_speaker_and_flags_a_mislabelled_code(client: TestC
         main.store.forget_speaker(name)
     for sid in a_sessions + b_sessions + [wrong, short]:
         main.store.delete_session(sid)
+
+
+def test_meeting_time_from_filename(tmp: Path) -> None:
+    """The date on the recorder's filename is the meeting, not the evening it was imported."""
+    from .ingest import meeting_time
+
+    assert meeting_time("VPIC1-20260817_064921-Meeting Recording.mp4") == "2026-08-17T06:49:21"
+    assert meeting_time("20260817-064921.mp4") == "2026-08-17T06:49:21"
+    # A serial number that looks like a date must not become one.
+    assert meeting_time("part-20261332_999999.mp4").startswith(("19", "20"))
+    assert meeting_time("part-20261332_999999.mp4") != "2026-13-32T99:99:99"
+    # No date in the name: the file's own mtime beats the import clock.
+    src = tmp / "friday.mp4"
+    src.write_bytes(b"x")
+    import os, time as _t
+    os.utime(src, (1_000_000_000, 1_000_000_000))
+    assert meeting_time(src.name, src) == _t.strftime("%Y-%m-%dT%H:%M:%S", _t.localtime(1_000_000_000))
