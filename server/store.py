@@ -123,6 +123,13 @@ class Store(SpeakerStore):
             self._db.execute("UPDATE session SET reference=? WHERE id=?", (text, session_id))
             self._db.commit()
 
+    def set_session_started(self, session_id: int, started: str) -> None:
+        """Correct when the meeting happened. Only the backfill script uses this: an import made
+        before filenames were read stamped the import clock, and the meeting list sorts on it."""
+        with self._lock:
+            self._db.execute("UPDATE session SET started=? WHERE id=?", (started, session_id))
+            self._db.commit()
+
     def end_session(self, session_id: int, ended: str) -> None:
         with self._lock:
             self._db.execute("UPDATE session SET ended=? WHERE id=?", (ended, session_id))
@@ -476,7 +483,7 @@ class Store(SpeakerStore):
         with self._lock:
             return [dict(r) for r in self._db.execute(
                 "SELECT s.*, (SELECT COUNT(*) FROM line WHERE session_id=s.id) AS lines "
-                "FROM session s ORDER BY s.id DESC"
+                "FROM session s ORDER BY s.started DESC, s.id DESC"
             )]
 
     def transcript_text(self, limit: int = 20000) -> str:

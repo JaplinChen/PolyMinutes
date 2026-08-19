@@ -442,9 +442,9 @@ async def import_recording(request: Request, filename: str = "upload") -> dict:
         # The original video is not evidence — every stage after this reads the wav.
         source.unlink(missing_ok=True)
 
-    now = time.strftime("%Y-%m-%dT%H:%M:%S")
-    session_id = main.store.start_session(now, str(wav))
-    main.store.end_session(session_id, now)
+    started = ingest.meeting_time(Path(filename).name)
+    session_id = main.store.start_session(started, str(wav))
+    main.store.end_session(session_id, started)
     # Queued like a meeting that just ended, not decoded inline: a long recording used to hold this
     # request open for the whole pass — past most proxies' timeout — with nothing on screen saying
     # why. Through `_refine` the response returns as soon as the session exists, the dashboard's
@@ -480,9 +480,9 @@ def import_url(body: dict) -> dict:
 
     tag, wav = _import_slot()
     source = config.RECORDINGS_DIR / f"import-{tag}.download"
-    now = time.strftime("%Y-%m-%dT%H:%M:%S")
-    session_id = main.store.start_session(now, str(wav))
-    main.store.end_session(session_id, now)
+    started = ingest.meeting_time(Path(url).name, None if is_link else Path(url))
+    session_id = main.store.start_session(started, str(wav))
+    main.store.end_session(session_id, started)
 
     def run(cancel):
         cues, sub_lang = [], ""
