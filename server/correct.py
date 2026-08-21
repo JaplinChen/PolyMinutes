@@ -115,8 +115,13 @@ class Corrector:
         # is left alone: the glossary saying a word exists is also the glossary saying it is not
         # a mistake. Protected words are here and nowhere else — known, never written.
         self._known = {t.source for t in terms}
-        # Longest first: a correction that contains another must win.
-        self._aliases = sorted((aliases or {}).items(), key=lambda kv: -len(kv[0]))
+        # Longest first: a correction that contains another must win. A registered word is never
+        # the wrong side of one — the rule the comment above states applies to what a human typed
+        # as much as to what pinyin infers, and only the inference half was honouring it. A room
+        # accumulated 工序 -> 工需 that way: 工序 is in its glossary, is fed to the decoder as a
+        # hotword, and this pass then rewrote the 19 places the decoder had got right.
+        self._aliases = sorted(((wrong, right) for wrong, right in (aliases or {}).items()
+                                if wrong not in self._known), key=lambda kv: -len(kv[0]))
 
     def fix(self, text: str) -> str:
         if not text:

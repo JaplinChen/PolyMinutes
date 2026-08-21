@@ -190,3 +190,17 @@ def test_a_hand_edit_only_teaches_the_word_it_fixed() -> None:
     assert ("三個環節", "三廠") in correct.diff_terms("這三個環節。", "檢查三廠。")
     assert ("能力", "人員") in correct.diff_terms(
         "不要理想到作業能力", "不要理想到作業人員")
+
+
+def test_a_registered_word_is_never_corrected_away() -> None:
+    """The glossary saying a word exists is also the glossary saying it is not a mistake.
+
+    That rule was only being applied to the pinyin inference, not to what a human typed. A real
+    room accumulated 工序 -> 工需 from one edit; 工序 is in its own glossary and is fed to the
+    decoder as a hotword, so the alias then rewrote the 19 places the decoder had got right.
+    """
+    terms = [store.Term(id=1, source="工序", lang="zh", mode="hint", category="", targets={})]
+    corrector = correct.Corrector(terms, {"工序": "工需", "攤接": "焊接"})
+    assert corrector.fix("這個工序要確認") == "這個工序要確認"
+    # An alias for a word the glossary does not claim still applies.
+    assert corrector.fix("這邊要攤接") == "這邊要焊接"
