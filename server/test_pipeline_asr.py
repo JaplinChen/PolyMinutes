@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from . import asr, asr_gpu, config, pipeline, store
+import numpy as np
+
+from . import asr, asr_gpu, config, pipeline, postprocess, store
 
 
 def test_language_whitelist_rejects_what_was_never_configured() -> None:
@@ -62,9 +64,28 @@ def test_hotwords_leave_protected_words_alone() -> None:
     assert "才夠" not in words, words
     assert "生管" in words and "工程變更" in words, words
 
-    # The other three modes are all "make this term happen", so all three are biased.
-    every = asr_gpu.hotwords_from([_term("甲", "translate"), _term("乙", "keep"), _term("丙", "hint")])
-    assert every.split() == ["甲", "乙", "丙"], every
+    # Only `hint` is. The prompt is opt-in per term, not the default for the glossary.
+    every = asr_gpu.hotwords_from([_term("甲", "translate"), _term("丙", "hint")])
+    assert every.split() == ["丙"], every
+
+
+def test_hotwords_leave_customer_names_alone() -> None:
+    """`keep` is proper nouns, and biasing a proper noun makes Whisper write it into audio it is
+    not in. 比雅久 was in the glossary for the 2026-08-05 meeting and came back four times in
+    places the human transcript has no customer name at all. The corrector still recovers a name
+    that really was said, from pinyin, on evidence rather than on prior."""
+    words = asr_gpu.hotwords_from([_term("生管"), _term("比雅久", "keep"), _term("Vinfast", "keep")])
+    assert words == "生管", words
+
+
+def test_a_longer_prompt_is_not_free() -> None:
+    """Eleven process terms added to the prompt cost a whole 20-second line on the 2026-08-05
+    meeting — 六合找我們說那個 SP13 的模具送來試做, present with the short prompt and gone with the
+    long one. So a term reaches the corrector by default and the prompt only when asked."""
+    corrector_only = [_term(s, "translate") for s in ("檢具", "包料", "鍍層剝落", "合資案")]
+    assert asr_gpu.hotwords_from(corrector_only) == ""
+    # And the ones marked for it still get there.
+    assert asr_gpu.hotwords_from(corrector_only + [_term("生管", "hint")]) == "生管"
 
 
 def test_hotwords_stay_inside_whisper_prompt_window() -> None:
@@ -114,3 +135,52 @@ def test_the_cpu_recogniser_accepts_hotwords_and_ignores_them() -> None:
     """sherpa-onnx cannot bias Whisper at all; callers must not have to know which one they hold."""
     cpu = asr.Transcriber.__new__(asr.Transcriber)
     cpu.set_hotwords("生管 工程變更")  # must not raise
+
+
+def test_a_glossary_prompt_turns_the_no_speech_gate_off() -> None:
+    """no_speech_prob stops describing the audio once hotwords are in the decode.
+
+    faster-whisper passes them as a decoder prompt prefix, and the score is read at the first
+    decoding step — with a prefix in front of it, that step answers a different question. Measured
+    on the 2026-08-10 meeting the same clips moved 0.19 -> 0.99 with the prompt on, text identical
+    both times, and this gate then dropped 3 to 7 minutes of real speech per meeting.
+    """
+    assert not asr_gpu._spoken(_Seg("real speech scored as silence", 0.99))
+    assert asr_gpu._spoken(_Seg("real speech scored as silence", 0.99), biased=True)
+    # Unbiased decodes keep the gate: it is still the only thing that catches confident boilerplate.
+    assert not asr_gpu._spoken(_Seg("đăng ký kênh", 0.95), biased=False)
+
+
+def test_an_empty_decode_is_retried_without_the_glossary_prompt() -> None:
+    """The prompt is a prior, and a prior can talk the decoder out of a sentence.
+
+    5 of 33 utterances lost on the 2026-08-10 meeting came back only once it was removed, so an
+    utterance is not written off until the recogniser has been asked without it.
+    """
+    class Recogniser:
+        def __init__(self) -> None:
+            self.plain = 0
+
+        def transcribe(self, samples, language):
+            return "", language
+
+        def transcribe_unbiased(self, samples, language):
+            self.plain += 1
+            return "六合找我們說那個 SP13 的模具送來試做", language
+
+    said = postprocess.Utterance(0.0, np.zeros(16000, dtype=np.float32), speaker="S1")
+    said.text, said.lang = "", "zh"
+    recogniser = Recogniser()
+    postprocess.transcribe_all([said], recogniser, forced={"S1": "zh"})
+    assert said.text == "六合找我們說那個 SP13 的模具送來試做"
+    assert recogniser.plain == 1
+
+    # A recogniser without the second attempt (the sherpa fallback) must still work untouched.
+    class Plain:
+        def transcribe(self, samples, language):
+            return "", language
+
+    quiet = postprocess.Utterance(0.0, np.zeros(16000, dtype=np.float32), speaker="S1")
+    quiet.text, quiet.lang = "", "zh"
+    postprocess.transcribe_all([quiet], Plain(), forced={"S1": "zh"})
+    assert quiet.text == ""

@@ -100,19 +100,37 @@ class _FakeBatched:
         self.batches: list[int] = []
 
     def transcribe(self, audio, batch_size, **kw):
+        """Lazy, like the real one. faster-whisper decodes on iteration, not on the call, so a
+        fake that raises eagerly cannot see whether the retry actually wraps the decode — and for
+        a while it did not."""
         self.batches.append(batch_size)
-        if batch_size > self._ok_at:
-            raise RuntimeError("CUDA failed with error out of memory")
+        too_big = batch_size > self._ok_at
+
+        def segments():
+            if too_big:
+                raise RuntimeError("CUDA failed with error out of memory")
+            return iter(())
 
         class _Info:
             language = "zh"
 
-        return [], _Info()
+        return _LazySegments(segments), _Info()
+
+
+class _LazySegments:
+    """Iterable that does its work — and raises — only when something iterates it."""
+
+    def __init__(self, produce) -> None:
+        self._produce = produce
+
+    def __iter__(self):
+        return self._produce()
 
 
 def _fake_transcriber(fake: _FakeBatched) -> asr_gpu.Transcriber:
     tr = asr_gpu.Transcriber.__new__(asr_gpu.Transcriber)
     tr._languages, tr._hotwords, tr._batched = ["zh"], "", fake
+    tr._batch = asr_gpu.BATCH_SIZE
     return tr
 
 
@@ -163,6 +181,12 @@ def test_a_contended_card_waits_then_shrinks_the_batch(tmp: Path) -> None:
     # 32 twice (the initial try and the post-wait retry), then 16, then 8 which succeeds.
     assert fake.batches == [32, 32, 16, 8], fake.batches
     assert out == [("", "zh")]  # empty fake result, judged and returned
+
+    # The card's capacity does not change between batches, so the next decode starts at 8 rather
+    # than paying the discovery again. A 55-minute reprocess ran 88s against over three minutes.
+    fake.batches.clear()
+    tr.transcribe_many([np.zeros(16000, dtype=np.float32)], "zh")
+    assert fake.batches == [8], fake.batches
 
 
 def test_a_card_too_full_for_one_utterance_gives_up(tmp: Path) -> None:

@@ -78,9 +78,28 @@ NO_SPEECH_MAX = 0.85
 TEMPERATURE = 0.0
 
 
-def _spoken(seg) -> bool:
-    """False for a segment the decoder is near-certain is silence — a hallucinated line in a gap."""
-    return getattr(seg, "no_speech_prob", 0.0) < NO_SPEECH_MAX
+def _spoken(seg, biased: bool = False) -> bool:
+    """False for a segment the decoder is near-certain is silence — a hallucinated line in a gap.
+
+    `biased` says a glossary prompt was in the decode, and then this gate is off, because
+    no_speech_prob is not a reading of the audio any more. faster-whisper passes hotwords as a
+    decoder prompt prefix, and no_speech_prob is the probability of the <|nospeech|> token at the
+    first decoding step — with a prefix in front of it, that step is answering a different
+    question. Measured on the 2026-08-10 meeting, same clips, same weights, prompt the only
+    difference:
+
+        1132.3s  0.44 -> 0.86    這個焊接氣體從這邊挑出來
+        1324.4s  0.68 -> 0.99    貼在閥門上面…標籤貼的位置要確認一下
+        1669.7s  0.27 -> 0.91    像剛剛那個不曉得漢管要再確認一下…
+        2113.1s  0.35 -> 0.94    我們到底有哪些浪費要趕快處理掉…
+        9509.0s  0.19 -> 0.99    大家如果有空的話…
+
+    The text was correct in both columns; only the score moved, and this gate then threw the whole
+    utterance away. Across five real meetings that was 3 to 7 minutes of speech per meeting.
+    Hallucinations stay out through the text filters in `_judge`, which read what was written
+    rather than a score: eight seconds of pure silence still decodes to nothing with the gate off.
+    """
+    return biased or getattr(seg, "no_speech_prob", 0.0) < NO_SPEECH_MAX
 
 
 def _add_cuda_dlls() -> None:
@@ -125,6 +144,8 @@ class Transcriber:
         self._model = WhisperModel(name, device=device, device_index=index,
                                    compute_type=compute_type)
         self._batched = None
+        # The largest batch this card has been seen to hold, remembered across decodes.
+        self._batch = BATCH_SIZE
         log.info("ct2 model %s on %s:%d/%s", name, device, index, compute_type)
 
     def set_hotwords(self, hotwords: str) -> None:
@@ -172,10 +193,11 @@ class Transcriber:
         # Each segment is placed by its midpoint, so a decode that runs slightly over its clip
         # still lands on the utterance it came from.
         texts = ["" for _ in clips]
+        biased = bool(self._hotwords)
         for seg in segments:
             # A confident-silence segment is Whisper filling a gap between speakers; dropping it here
             # keeps the hallucinated text out of the utterance it would otherwise be assigned to.
-            if not _spoken(seg):
+            if not _spoken(seg, biased):
                 continue
             middle = (seg.start + seg.end) / 2
             for i, span in enumerate(spans):
@@ -197,16 +219,29 @@ class Transcriber:
         card too full to hold the model at all still fails at batch one, and that failure says the
         real problem is elsewhere (the other consumer, or a context left unusable by the OOM).
         """
-        batch = BATCH_SIZE
+        # Starts where the last decode ended up, not at BATCH_SIZE. The card's capacity does not
+        # change between two batches of the same meeting, so re-learning it each time costs a
+        # failed attempt plus OOM_WAIT_SECONDS on every batch — measured on a 55-minute recording
+        # after the glossary grew, that was the difference between 88 seconds and over three
+        # minutes, all of it spent discovering the same answer.
+        batch = self._batch
         waited = False
         while True:
             try:
-                return self._batched.transcribe(
+                segments, info = self._batched.transcribe(
                     audio, language=language or None, beam_size=BEAM_SIZE,
                     temperature=TEMPERATURE,
                     batch_size=batch, vad_filter=False, clip_timestamps=spans,
                     hotwords=self._hotwords or None, condition_on_previous_text=False,
                 )
+                # Drained here, inside the guard. faster-whisper returns a generator and does the
+                # decoding on iteration, so returning it unread put every OOM this function exists
+                # to catch outside the try — the caller hit it in its own `for seg in segments`
+                # and the wait-and-shrink below never ran once. Found when a longer glossary
+                # pushed a real reprocess over the card: it failed outright with no warning
+                # logged, at batch 32, with a step down to 16 sitting right here unused.
+                self._batch = batch
+                return list(segments), info
             except RuntimeError as exc:
                 # Any CUDA-flavoured error triggers a step back, not only a recognised OOM string:
                 # once the card is contended the wording is not guaranteed, and stepping back is
@@ -246,13 +281,30 @@ class Transcriber:
             hotwords=self._hotwords or None,
             condition_on_previous_text=False,  # one VAD utterance at a time carries no history
         )
-        text = "".join(s.text for s in segments if _spoken(s)).strip()
+        text = "".join(s.text for s in segments if _spoken(s, bool(self._hotwords))).strip()
         detected = (info.language or language or "").strip()
 
         # Same three refusals as the sherpa path, including the collapse check: a first-pass
         # auto-detect that returns 產品 產品 產品 產品 must not have the language it invented for
         # that counted as evidence of what the speaker speaks.
         return self._judge(text, detected)
+
+    def transcribe_unbiased(self, samples: np.ndarray, language: str) -> tuple[str, str]:
+        """One more attempt with the glossary prompt taken out, for a clip that came back empty.
+
+        The prompt is a prior, and a prior can talk the decoder out of a sentence: measured on the
+        2026-08-10 meeting, 5 of 33 lost utterances decoded to text only once the hotwords were
+        gone. Nothing else changes — same weights, same clip — so this is the cheapest thing to
+        try before writing an utterance off, and it runs on the handful that failed rather than
+        the thousands that did not. With no prompt in the decode the no-speech gate is meaningful
+        again and applies as usual.
+        """
+        saved = self._hotwords
+        self._hotwords = ""
+        try:
+            return self.transcribe(samples, language)
+        finally:
+            self._hotwords = saved
 
     def _allowed(self, detected: str) -> bool:
         if not self._languages or not detected:
@@ -291,13 +343,28 @@ HOTWORD_BUDGET = 200
 def hotwords_from(terms: list) -> str:
     """faster-whisper takes one string; the glossary is a list of terms.
 
-    Two things are filtered out. `protect` terms, because that mode means "this word is real, do
+    Three things are filtered out. `protect` terms, because that mode means "this word is real, do
     not rewrite it" — 才夠 is registered only to shield it from the corrector, and biasing the
     decoder toward an ordinary word would manufacture the very mistake the glossary entry exists to
     prevent. And anything past the budget, because the alternative is Whisper truncating it for us,
     without saying so.
+
+    Only `hint` is biased, which is the mode whose whole meaning is "listen for this". Every other
+    mode reaches the recogniser through `correct.Corrector` instead, which rewrites on evidence —
+    it needs the pinyin to match what was actually decoded — where the prompt acts on prior alone.
+    Two measurements on the 2026-08-05 meeting, both against the human transcript:
+
+      * 比雅久 was in the glossary as a customer name, and Whisper wrote it into four places the
+        meeting has no customer name at all: 「收料，比雅久」「比雅久分的資格」「觀念大概比雅久」.
+      * Adding eleven process terms to the prompt cost a whole 20-second line — 六合找我們說那個
+        SP13 的模具送來試做 — which decoded fine with the shorter prompt and is gone with the
+        longer one. Same audio, same weights, same batch size; only the prompt changed.
+
+    The prompt is not free and it is not evidence. What it buys is a term the decoder would not
+    otherwise produce at all, which is a deliberate choice about a specific word — so it is opt-in,
+    by marking the term `hint`, rather than the default for everything in the glossary.
     """
-    usable = [t for t in terms if getattr(t, "mode", "") != "protect"]
+    usable = [t for t in terms if getattr(t, "mode", "") == "hint"]
     kept, used = [], 0
     for term in usable:
         cost = len(term.source) + 1  # the joining space

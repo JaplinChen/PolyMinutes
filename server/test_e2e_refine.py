@@ -291,6 +291,46 @@ def test_a_hand_edit_keeps_its_pre_edit_text_and_a_rerun_drops_it(tmp: Path) -> 
         st.close()
 
 
+def test_a_reprocess_carries_hand_edits_onto_the_new_transcript(tmp: Path) -> None:
+    """An edit is the only ground truth this system gets, and replace_lines used to drop it.
+
+    Matched by time rather than by text, because the whole point of a reprocess is that the words
+    come out different. A new line far longer than the edited one is a merge of several utterances,
+    and writing one correction over all of them would delete its neighbours — so that one is left
+    behind rather than misplaced.
+    """
+    st = store_mod.Store(tmp / "carry.db")
+    try:
+        sid = st.start_session("2026-01-01T09:00:00", "r.wav")
+        st.add_line(sid, 10.0, "S1", "zh", "前下足", {}, end_time=12.0)
+        st.add_line(sid, 30.0, "S1", "zh", "誰也沒改過這句", {}, end_time=33.0)
+        typed, untouched = (l["id"] for l in st.lines(sid))
+        st.replace_line(typed, "前下組，支架有 7 pieces", "zh", {"en": "bracket, 7 pieces"},
+                        "ok", refined=True)
+
+        st.replace_lines(sid, [
+            {"start": 10.2, "end_time": 12.1, "speaker": "S2", "lang": "zh",
+             "source": "前下組", "translations": {"en": "front lower"}},
+            {"start": 30.0, "end_time": 33.0, "speaker": "S2", "lang": "zh",
+             "source": "重跑後的新句子", "translations": {}},
+        ])
+        after = st.lines(sid)
+        assert after[0]["source"] == "前下組，支架有 7 pieces", after[0]
+        assert after[0]["orig_source"] == "前下足", after[0]
+        assert after[0]["refined"] == 1
+        assert after[0]["translations"] == {"en": "bracket, 7 pieces"}, after[0]
+        # The line nobody touched is whatever the re-decode said.
+        assert after[1]["source"] == "重跑後的新句子", after[1]
+
+        # A new line that swallowed the edited one plus its neighbours keeps its own words.
+        st.replace_lines(sid, [{"start": 5.0, "end_time": 45.0, "speaker": "S2", "lang": "zh",
+                                "source": "一整段合併起來的話", "translations": {}}])
+        merged = st.lines(sid)
+        assert len(merged) == 1 and merged[0]["source"] == "一整段合併起來的話", merged
+    finally:
+        st.close()
+
+
 def test_an_empty_retranscription_does_not_wipe_the_existing_transcript(tmp: Path) -> None:
     """A re-transcription that decodes nothing must leave the old transcript standing.
 
@@ -529,6 +569,40 @@ def test_a_database_made_before_the_columns_existed_gains_them(tmp: Path) -> Non
         st.replace_lines(1, [{"start": 0.0, "speaker": "S1", "lang": "zh", "source": "新的一行",
                               "translations": {"en": "a new line"}, "status": "ok"}])
         assert [l["source"] for l in st.lines(1)] == ["新的一行"]
+    finally:
+        st.close()
+
+
+def test_a_rewrite_drops_the_prints_of_codes_it_renumbered_away(tmp: Path) -> None:
+    """A reprocess renumbers speakers from scratch, so a code that comes back means somebody else.
+
+    Session 3 was holding sixteen prints for codes its transcript no longer had — S34 to S43 among
+    them, left by the pass that merged those labels into one speaker. Nothing read them, which is
+    exactly the danger: the next reprocess to produce an S34 would have named that voice from a
+    print belonging to a different person, and a wrong print is self-consistent forever.
+    """
+    st = store_mod.Store(tmp / "prints.db")
+    try:
+        session_id = st.start_session("2026-01-01T09:00:00", str(tmp / "a.wav"))
+        st.add_line(session_id, 0.0, "S1", "zh", "第一位", {})
+        st.add_line(session_id, 5.0, "S2", "zh", "第二位", {})
+        st.save_voiceprint(session_id, "S1", b"" * 8)
+        st.save_voiceprint(session_id, "S2", b"" * 8)
+
+        # The rewrite keeps S1 and drops S2 entirely.
+        st.replace_lines(session_id, [{"start": 0.0, "speaker": "S1", "lang": "zh",
+                                       "source": "只剩一位", "translations": {}}])
+
+        assert st.voiceprint(session_id, "S1") == b"" * 8, "a surviving code kept its print"
+        assert st.voiceprint(session_id, "S2") is None, "S2's print outlived the code it described"
+
+        # Another session's prints are none of this session's business.
+        other = st.start_session("2026-01-02T09:00:00", str(tmp / "b.wav"))
+        st.add_line(other, 0.0, "S2", "zh", "別場會議", {})
+        st.save_voiceprint(other, "S2", b"" * 8)
+        st.replace_lines(session_id, [{"start": 0.0, "speaker": "S1", "lang": "zh",
+                                       "source": "再寫一次", "translations": {}}])
+        assert st.voiceprint(other, "S2") == b"" * 8, "pruned across sessions"
     finally:
         st.close()
 

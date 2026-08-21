@@ -53,9 +53,49 @@ MIN_PIECE_SECONDS = 0.5
 #           0.80          824       99.7 min              8 of 17              6 of 6
 #           1.00          743       94.7 min              7 of 17              5 of 6
 #
-# 0.80 is the last value that costs no long line. Above it the curve flattens and real speech
-# starts going: at 1.00 one of the six reference reports is gone.
-POST_MEETING_MIN_SPEECH = 0.80
+# 0.80 was chosen off that table as the last value costing no long line. Re-measured on
+# 2026-08-21 over two whole meetings, decoded end to end at each setting, it was too high — the
+# table counted sign-offs, and what 0.80 was also buying was silence:
+#
+#     min speech   transcribed speech (s3 / s6)   gained vs 0.80   lost vs 0.80
+#           0.25            30.4 / 120.1 min       4.6 / 10.0 min   0.2 / 1.5 min
+#           0.50            29.1 / 117.4 min       3.3 /  7.0 min   0.1 / 1.2 min
+#           0.80            26.0 / 111.6 min             —               —
+#
+# 0.50 gains 3.3 and 7.0 minutes of real speech and gives back almost nothing; the 11 added runs
+# over three seconds on each meeting are whole reports (今天早上由品管來報告一下我們七月份第五週
+# 內銷客戶的質量表現期…, 總經理還有問一下現場的幹部…). 0.25 gains another 1.3 and 2.7 minutes but
+# doubles the sub-1.5s fragments, which is where the sign-offs the table was counting live.
+#
+# What that table could not see, because it counted VAD utterances rather than decoding them:
+# the threshold also moves what lands in a decode batch, and with it the one language faster-
+# whisper reports for the whole batch. Session 6 came back with 64 runs of English translation at
+# 0.80 and none at 0.50 — same audio, same weights. That is a batch-language problem, not a VAD
+# one; the setting must not be read as a fix for it.
+POST_MEETING_MIN_SPEECH = 0.50
+# Silence one speaker may leave inside a single decoded clip. Above it they have stopped; below
+# it they are breathing, and cutting there hands Whisper a fragment with no sentence in it.
+#
+# Swept on the 2026-08-05 meeting, after diarize.regroup_speakers made the labels worth honouring.
+# The chairman's eleven-minute address is the section that matters — it is where the fragments and
+# the hallucinations both were:
+#
+#     gap    lines   median   under 3s   chairman median
+#     1.5      231     3.9 s        101            2.4 s
+#     2.0      208     5.0 s         74            3.7 s
+#     2.5      189     6.0 s         63            3.9 s
+#     3.0      177     7.0 s         53            4.9 s
+#
+# 2.0 is where honouring the speaker labels catches up with ignoring them entirely — the same
+# recording merged on the gap alone, labels discarded, gives 208 lines and a 4.0 s chairman
+# median. Past that the merge is joining runs the labels do not endorse, which is the attribution
+# error this whole path exists to avoid.
+MERGE_MAX_GAP = 2.0
+# The longest clip the merge will build. Whisper's window is 30s and it discards the rest without
+# saying so, so this leaves headroom; it also stays under segment.py's MAX_MERGED_SECONDS, which
+# is what decides whether a transcript line is still scrubbable.
+MERGE_MAX_SECONDS = 20.0
+
 # Utterances averaged into a speaker's stored voiceprint: enough for a stable centroid, and a
 # fixed cost per speaker rather than one embedding per utterance in the meeting.
 VOICEPRINT_SAMPLES = 5
@@ -73,6 +113,9 @@ class Utterance:
     speaker: str = ""
     lang: str = ""
     text: str = ""
+    # Which decode this utterance's language came out of. Utterances sharing one are not
+    # independent readings of what language was spoken — see `dominant_languages`.
+    decode: int = -1
 
 
 def best_model() -> Path:
@@ -151,6 +194,64 @@ def _inherit_missing(utterances: list[Utterance]) -> None:
             following = u.speaker
         else:
             u.speaker = following
+
+
+def merge_runs(utterances: list[Utterance], wav: Path) -> list[Utterance]:
+    """Rejoin what one speaker said without stopping, so Whisper decodes sentences and not breaths.
+
+    The VAD ends an utterance on silence, which is not where a sentence ends. On the 2026-08-05
+    factory meeting that left 157 of 258 lines under three seconds — and the short lines are where
+    the transcript falls apart. Same recording, same model, same hour:
+
+        section                 lines   median length   median text
+        the general manager        87           7.3 s      27 chars
+        the chairman              125           1.8 s      10 chars
+
+    The chairman's section is the one that came back reading 「料理 互動」and「MICROPHONE SELFIE」.
+    Nothing is wrong with the audio there — he pauses more, so the VAD cuts more, so Whisper sees
+    1.8 seconds with no sentence in it and writes what such audio sounded like in its training set.
+    Decoding the same seconds as one 20-second clip gives it the context it needs to decline.
+
+    Runs are built after the speaker split, so a run is one person by construction: anyone else
+    taking the floor lands between them in the list and ends the run. The clip is sliced from the
+    recording rather than concatenated from the pieces, which keeps the pauses the speaker actually
+    left — the timestamps stay honest, and Whisper is given silence rather than a splice.
+
+    segment.py still runs later and still merges at the text level; this does not replace it. It
+    fixes the half segment.py cannot reach, because by then the hallucination is already written.
+    """
+    if len(utterances) < 2:
+        return utterances
+
+    audio, rate = sf.read(str(wav), dtype="float32")
+    if rate != config.SAMPLE_RATE:
+        raise ValueError(f"{wav} is {rate} Hz, expected {config.SAMPLE_RATE}")
+    if audio.ndim > 1:
+        audio = audio.mean(axis=1)
+
+    def ends(u: Utterance) -> float:
+        return u.start + len(u.samples) / config.SAMPLE_RATE
+
+    def flush(run: list[Utterance]) -> Utterance:
+        if len(run) == 1:
+            return run[0]
+        head = int(round(run[0].start * config.SAMPLE_RATE))
+        tail = int(round(ends(run[-1]) * config.SAMPLE_RATE))
+        return Utterance(run[0].start, audio[head:tail], speaker=run[0].speaker)
+
+    out: list[Utterance] = []
+    run: list[Utterance] = [utterances[0]]
+    for u in utterances[1:]:
+        gap = u.start - ends(run[-1])
+        span = ends(u) - run[0].start
+        if u.speaker == run[0].speaker and 0 <= gap <= MERGE_MAX_GAP and span <= MERGE_MAX_SECONDS:
+            run.append(u)
+            continue
+        out.append(flush(run))
+        run = [u]
+    out.append(flush(run))
+    log.info("merged %d utterances into %d runs", len(utterances), len(out))
+    return out
 
 
 def _join(pieces: list[tuple[float, float, int]]) -> list[tuple[float, float, int]]:
@@ -316,14 +417,32 @@ def dominant_languages(utterances: list[Utterance]) -> dict[str, str]:
     Below the minimum a speaker inherits the meeting's language, which is a far better guess than
     a coin flip on two samples.
     """
+    # One vote per decode, not per utterance. The batched recogniser lays sixty-four clips end to
+    # end and faster-whisper reports one language for the whole run, which it then hands back
+    # against every clip — so counting them individually invents sixty-four agreeing witnesses out
+    # of one. Measured on the 2026-08-10 meeting: one batch came back English and put 64 runs of
+    # English translation into a Mandarin factory meeting (「This is the electric fan that is
+    # often reminded of」 for 這個是常常提醒的那個電風扇), 8.4% of the transcript — comfortably
+    # over MIN_MINORITY_SHARE, which is sized for a real minority speaker and cannot be lowered to
+    # catch this without discarding one. Counted once, that batch is a single dissenting vote
+    # against a dozen, and every clip in it is re-decoded in the speaker's own language.
+    #
+    # The unbatched path leaves `decode` at -1 and is given a distinct id per utterance here, so
+    # a recogniser that really did read each clip separately keeps every vote it earned.
+    seen: set[tuple[str, str, int]] = set()
     counts: dict[str, dict[str, int]] = {}
     overall: dict[str, int] = {}
-    for u in utterances:
+    for i, u in enumerate(utterances):
         # Text-less utterances are dropped noise; their detected language is Whisper guessing at
         # static and must not vote.
-        if u.lang and u.text:
-            counts.setdefault(u.speaker, {})[u.lang] = counts.setdefault(u.speaker, {}).get(u.lang, 0) + 1
-            overall[u.lang] = overall.get(u.lang, 0) + 1
+        if not (u.lang and u.text):
+            continue
+        ballot = (u.speaker, u.lang, u.decode if u.decode >= 0 else ~i)
+        if ballot in seen:
+            continue
+        seen.add(ballot)
+        counts.setdefault(u.speaker, {})[u.lang] = counts.setdefault(u.speaker, {}).get(u.lang, 0) + 1
+        overall[u.lang] = overall.get(u.lang, 0) + 1
 
     if not overall:
         return {}
@@ -365,7 +484,7 @@ def transcribe_all(utterances: list[Utterance], transcriber: asr.Transcriber,
         for start in range(0, len(utterances), BATCH_UTTERANCES):
             group = utterances[start : start + BATCH_UTTERANCES]
             for u, (text, lang) in zip(group, batch([g.samples for g in group], "")):
-                u.text, u.lang = text, lang
+                u.text, u.lang, u.decode = text, lang, start
                 done += 1
                 if progress:
                     progress(u, done, len(utterances))
@@ -385,6 +504,12 @@ def transcribe_all(utterances: list[Utterance], transcriber: asr.Transcriber,
         # 就會直接進到系統變成需求 among them. The speaker's own language usually recovers them.
         if want and (not u.text or want != u.lang):
             text, used = transcriber.transcribe(u.samples, want)
+            # Empty again, and the glossary prompt is the last thing left to remove: it is a prior
+            # the decoder can be talked out of a sentence by, and the recogniser that has one
+            # offers a run without it. 5 of 33 utterances lost on the 2026-08-10 meeting came back
+            # only here.
+            if not text and (plain := getattr(transcriber, "transcribe_unbiased", None)):
+                text, used = plain(u.samples, want)
             # Still empty means the speaker's own language decoded this as noise as well, which is
             # what static sounds like to Whisper. Drop it rather than keep a phantom line.
             u.text, u.lang = (text, used) if text else ("", u.lang)
@@ -502,12 +627,21 @@ def rewrite_session(store: Store, session_id: int, wav: Path, cfg: config.Config
     # a speaker change belongs to neither of them.
     speaker_turns = diarize.turns(wav)
     if speaker_turns:
+        # Before anything is labelled: the turn pass splits one long speaker across many labels,
+        # and every stage after this — the line's speaker, the voiceprints, whether merge_runs can
+        # join two of his sentences — reads those labels as identity.
+        speaker_turns = diarize.regroup_speakers(wav, speaker_turns, diarizer.embed)
         before = len(utterances)
         utterances = split_on_turns(utterances, speaker_turns)
         log.info("%d turns split %d utterances into %d", len(speaker_turns), before, len(utterances))
     else:
         assign_speakers(utterances, diarizer)
     recognised = _remember_voices(store, session_id, utterances, diarizer)
+
+    # After the voiceprints, deliberately: they are picked by utterance length (VOICEPRINT_IDEAL_
+    # SECONDS), and merging first would hand that selection a pool of clips that are all long for a
+    # different reason. From here on the merged runs are the transcript's lines.
+    utterances = merge_runs(utterances, wav)
 
     def watch(_u: Utterance, _done: int, _total: int) -> None:
         if stop():

@@ -76,19 +76,49 @@ MIN_EMBED_SECONDS = 1.0
 CONTEXT_LINES = 3
 # Similarity required before a stored voiceprint puts a name on a speaker.
 #
-# Unvalidated, and honestly so. The material that should have tested it — seven interviews across
-# two firms sharing participants — could not, because clustering had merged each meeting into a
-# single speaker, so comparing meetings compared everyone against everyone. Those pairs scored
-# 0.69 to 0.94, which says nothing about whether two people are the same person.
+# Measured at last. The 2026-08-05 morning meeting has a human-reviewed transcript naming who is
+# speaking, so its speakers can be labelled and the recogniser scored against the answer. 32
+# prints from 5 people, each built the way `_remember_voices` builds one — the mean of five
+# utterance embeddings:
 #
-# Kept equal to SPEAKER_THRESHOLD until a recording exists where clustering works and a known
-# person appears twice.
-KNOWN_SPEAKER_THRESHOLD = 0.65
+#     same person, 131 pairs        min 0.758   p5 0.816   median 0.894
+#     different people, 365 pairs   max 0.759   p95 0.686  median 0.470
+#
+# The two distributions meet at 0.759 and overlap nowhere. What decides the threshold is not that
+# crossing point but the open-set case, which is the one that actually happens: hold a person out
+# of the roster entirely and ask the roster who they are. A stranger has no right answer, so every
+# name asserted is wrong — and strangers score as high as 0.759, because 總經理 and 人事Martin經理
+# resemble each other more than either resembles the rest of the room.
+#
+#     threshold   names kept   strangers wrongly named
+#          0.65        31/32                     14/32
+#          0.70        31/32                     11/32
+#          0.75        31/32                      2/32
+#          0.80        31/32                      0/32
+#
+# 0.65 named fourteen strangers out of thirty-two. That is not a corner case: on this recording it
+# put 人事Martin經理 on forty seconds of a production report he did not give, at 0.688. When the
+# right person *is* in the roster they score 0.854 at worst, so 0.80 costs nothing and closes the
+# whole gap. The one print of the 32 that is not recognised is the only print its speaker has —
+# held out against itself, there is nothing left of them to match.
+#
+# What is not measured here is the same person across two *meetings*: every pair above shares one
+# microphone and one hour. Cross-meeting scores will sit lower, so if real names start going
+# unrecognised this number is the first suspect — and the near-misses land on the suggestions
+# endpoint rather than vanishing.
+KNOWN_SPEAKER_THRESHOLD = 0.80
 # Above this, a recognition is trusted enough to feed back into learning: the matched centroid is
 # stored as a new variant, so a voice that drifts (mic, cold, years) keeps refreshing its own
 # prints without anyone renaming it. A notch above the assertion bar because a wrong auto-learned
 # print compounds — it pulls the next meeting's match further off.
-AUTO_LEARN_THRESHOLD = 0.75
+#
+# It was 0.75, which stopped being "a notch above" when the assertion bar moved to 0.80 and became
+# a notch below: everything asserted would also have been learned, which is the opposite of the
+# rule. That inversion had already fired — a code holding eight seconds of the QC manager was
+# named 三董 at 0.764 and folded into his roster, where nothing would ever have found it. 0.85
+# because a genuine match scores 0.854 at worst on the measured set (see KNOWN_SPEAKER_THRESHOLD),
+# so learning stays reserved for matches at the strong end of that range rather than its floor.
+AUTO_LEARN_THRESHOLD = 0.85
 # When the two best-matching *people* score within this of each other, no name is asserted — the
 # match goes to the suggestions endpoint for a human with the audio instead. With up to 8 variants
 # per person competing, a hair's-breadth win between two similar voices is noise, not identity.

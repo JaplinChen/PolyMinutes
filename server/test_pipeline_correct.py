@@ -144,13 +144,23 @@ def test_corrector_never_rewrites_a_near_rhyme() -> None:
     assert c.fix("生館的排程") == "生管的排程"
 
 
-def test_chinese_output_is_converted_to_taiwan_traditional() -> None:
+def test_chinese_output_is_converted_to_traditional() -> None:
     """Whisper emits Simplified for zh regardless of the speaker; Simplified on the meeting-room
     TV is an immediately visible failure, so conversion is not optional."""
-    assert asr._post("这个软件的质量", "zh") == "這個軟體的質量"
-    # Taiwan vocabulary, not just character shapes: 軟件 -> 軟體, 下周 -> 下週.
+    assert asr._post("这个软件的质量", "zh") == "這個軟件的質量"
     converted = asr._post("我们下周确认软件进度", "zh")
-    assert "軟體" in converted and "下週" in converted, converted
+    assert "下週" in converted, converted
+
+
+def test_conversion_leaves_factory_vocabulary_alone() -> None:
+    """s2twp rewrote 參數 to 引數 and 項目 to 專案 on a real factory meeting. The Taiwan phrase
+    tables are a software glossary; this room welds. See the note in asr.py."""
+    converted = asr._post("这些参数和项目都要确认", "zh")
+    assert "參數" in converted and "項目" in converted, converted
+    assert "引數" not in converted and "專案" not in converted, converted
+    # And not the bare s2t either: it writes 纔 for 才, including for 才夠, which the glossary
+    # protects by that spelling and the corrector then cannot match.
+    assert asr._post("那才是你的成就，才够", "zh") == "那才是你的成就，才夠"
     # Other languages must pass through untouched, diacritics included.
     assert asr._post("Chúng ta cần xác nhận", "vi") == "Chúng ta cần xác nhận"
     assert asr._post("schedule and delay", "en") == "schedule and delay"

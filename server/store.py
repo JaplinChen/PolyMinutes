@@ -310,9 +310,13 @@ class Store(SpeakerStore):
         either entirely the old one or entirely the new one. The caller must have finished
         translating before calling: holding a write lock across an LLM round trip would block the
         next meeting's first line on `database is locked`.
+
+        Voiceprints for codes the new transcript does not use go with the old lines, in the same
+        transaction — see the note where it happens.
         """
         with self._lock:
             try:
+                edits = self._human_edits(session_id)
                 self._db.execute("DELETE FROM line WHERE session_id=?", (session_id,))
                 for row in rows:
                     cur = self._db.execute(
@@ -325,6 +329,20 @@ class Store(SpeakerStore):
                         "INSERT INTO line_translation (line_id, lang, text) VALUES (?,?,?)",
                         [(int(cur.lastrowid), k, v) for k, v in row.get("translations", {}).items()],
                     )
+                self._restore_human_edits(session_id, edits)
+                # Prints for codes the new transcript no longer has. A reprocess renumbers
+                # speakers from scratch, so a code that survives the swap means a different person
+                # than it did before — and the stale print sat here waiting to be handed to it.
+                # Session 3 was holding sixteen of them, S34 to S43 among them, left by the pass
+                # that merged those labels into one speaker. Nothing read them yet, which is the
+                # whole danger: the next reprocess to produce an S34 would have named that voice
+                # from a print belonging to somebody else. Same rule `delete_voiceprint` applies
+                # after a merge or a reassign, applied where the codes are redrawn wholesale.
+                self._db.execute(
+                    "DELETE FROM voiceprint WHERE session_id=? AND code NOT IN "
+                    "(SELECT DISTINCT speaker FROM line WHERE session_id=?)",
+                    (session_id, session_id),
+                )
                 self._db.execute("UPDATE session SET lines_rev = lines_rev + 1 WHERE id=?",
                                  (session_id,))
                 self._db.commit()
@@ -334,6 +352,70 @@ class Store(SpeakerStore):
                 # The failure would surface later, somewhere else, as a transcript that vanished.
                 self._db.rollback()
                 raise
+
+    # How much of the edited line the new one has to cover before it is the same sentence, and how
+    # much longer than it the new one is allowed to be. A re-decode redraws every boundary, so a
+    # hand-typed line rarely lands on an identical span — but a new line three times as long is a
+    # merge of several utterances, and writing one person's correction over all of them would
+    # delete the others. Measured against the five meetings reprocessed on 2026-08-20: of 44
+    # hand-edited lines, 41 found a match inside these bounds and 3 fell outside, all three onto
+    # merged lines that would have swallowed a neighbour.
+    EDIT_OVERLAP = 0.6
+    EDIT_SPAN = 1.6
+
+    def _human_edits(self, session_id: int) -> list[dict]:
+        """Lines somebody typed by hand, with what they typed. Caller holds the lock.
+
+        `orig_source` is the discriminator: `replace_line(refined=True)` is only reached from the
+        edit endpoint, and it is the only writer that fills the column. The LLM refine pass goes
+        through `update_line`, which sets `refined` but never `orig_source`, so the two kinds of
+        rewrite stay told apart.
+        """
+        rows = self._db.execute(
+            "SELECT id, start, COALESCE(end_time, start + 2) AS ends, source, orig_source, lang "
+            "FROM line WHERE session_id=? AND orig_source IS NOT NULL AND orig_source <> source",
+            (session_id,)).fetchall()
+        out = []
+        for row in rows:
+            translations = self._db.execute(
+                "SELECT lang, text FROM line_translation WHERE line_id=?", (row["id"],)).fetchall()
+            out.append({**dict(row), "translations": {t["lang"]: t["text"] for t in translations}})
+        return out
+
+    def _restore_human_edits(self, session_id: int, edits: list[dict]) -> None:
+        """Put hand-typed lines back onto the re-decoded transcript. Caller holds the lock.
+
+        An edit is the only ground truth this system ever has — someone who was in the room saying
+        what was actually said — and a reprocess used to throw every one of them away, because
+        `replace_lines` swaps the whole transcript and the new rows have new ids. The room learns
+        term-level fixes through the corrections table, but a whole sentence retyped has nowhere
+        else to live.
+
+        Matched by time, not by text: the point of a reprocess is that the words come out
+        different, so the words cannot be the key. The new line covering most of the old one's
+        span wins, subject to the two bounds above; an edit with no such line stays lost rather
+        than being written somewhere it does not belong. Translations ride along, because they
+        were made from the typed text and are still what it means.
+        """
+        for edit in edits:
+            candidates = self._db.execute(
+                "SELECT id, start, COALESCE(end_time, start + 2) AS ends FROM line "
+                "WHERE session_id=? AND start < ? AND COALESCE(end_time, start + 2) > ?",
+                (session_id, edit["ends"], edit["start"])).fetchall()
+            span = max(edit["ends"] - edit["start"], 0.001)
+            fits = [c for c in candidates
+                    if (min(edit["ends"], c["ends"]) - max(edit["start"], c["start"])) / span
+                    >= self.EDIT_OVERLAP and (c["ends"] - c["start"]) / span <= self.EDIT_SPAN]
+            if not fits:
+                continue
+            best = max(fits, key=lambda c: min(edit["ends"], c["ends"]) - max(edit["start"], c["start"]))
+            self._db.execute(
+                "UPDATE line SET source=?, orig_source=?, lang=?, refined=1 WHERE id=?",
+                (edit["source"], edit["orig_source"], edit["lang"], best["id"]))
+            self._db.execute("DELETE FROM line_translation WHERE line_id=?", (best["id"],))
+            self._db.executemany(
+                "INSERT INTO line_translation (line_id, lang, text) VALUES (?,?,?)",
+                [(best["id"], k, v) for k, v in edit["translations"].items()])
 
     def delete_session(self, session_id: int) -> None:
         """Remove one meeting. Lines, translations, voiceprints, names and the summary all hang off
