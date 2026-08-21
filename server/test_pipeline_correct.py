@@ -164,3 +164,29 @@ def test_conversion_leaves_factory_vocabulary_alone() -> None:
     # Other languages must pass through untouched, diacritics included.
     assert asr._post("Chúng ta cần xác nhận", "vi") == "Chúng ta cần xác nhận"
     assert asr._post("schedule and delay", "en") == "schedule and delay"
+
+
+def test_a_hand_edit_only_teaches_the_word_it_fixed() -> None:
+    """One edit fixes three things, and only one of them generalises.
+
+    A person retyping a line corrects the word the decoder misheard, adds the punctuation it never
+    wrote, and brings whatever characters their own keyboard produced. All three arrive at
+    diff_terms looking like a term pair, and a rule is then applied literally to every later
+    transcript. Audited on a real room's 239 accumulated rules, eleven were of the second and third
+    kind — 剪輯 剪輯 剪輯 -> 看一下那個, 報 -> ，報, 內銷 -> 内销 — every one of them firing on
+    text nobody was looking at when the edit was made.
+    """
+    # Punctuation the decoder simply did not write, including a space.
+    assert not correct.diff_terms("報廢了155匹排序", "報廢了155匹，排序")
+    assert not correct.diff_terms("剪輯 剪輯 剪輯", "看一下那個")
+    # The same word in the other script, in either direction.
+    assert not correct.diff_terms("這是內銷客戶", "這是内销客戶")
+    assert not correct.diff_terms("這是内销客戶", "這是內銷客戶")
+    # A real change of words whose replacement is Simplified: the words did change, but writing it
+    # down would put Simplified into every later transcript through the back door.
+    assert not correct.diff_terms("所以對於沒有拉出來", "所以这里没有拉出來")
+
+    # What the mechanism is for: the decoder heard the wrong word, and the fix is a word.
+    assert ("三個環節", "三廠") in correct.diff_terms("這三個環節。", "檢查三廠。")
+    assert ("能力", "人員") in correct.diff_terms(
+        "不要理想到作業能力", "不要理想到作業人員")
