@@ -265,8 +265,10 @@ def test_importing_a_recording_makes_it_a_session(client: TestClient) -> None:
     imported = next(s for s in listed if s["id"] == session_id)
     # Ended, or /reprocess and the clip endpoint would treat it as still recording.
     assert imported["ended"] and Path(imported["wav_path"]).is_file()
-    # The upload itself is not kept: everything downstream reads the extracted wav.
-    assert not list(config.RECORDINGS_DIR.glob("import-*-meeting.m4a"))
+    # The upload is kept, and reachable: watching a line is what the extracted wav cannot do.
+    assert list(config.RECORDINGS_DIR.glob("import-*-meeting.m4a"))
+    assert imported["hasVideo"]
+    assert client.get(f"/api/sessions/{session_id}/video").status_code == 200
 
     assert client.post("/api/sessions/import?filename=empty.mp4", content=b"").status_code == 400
     assert client.post("/api/sessions/import?filename=x.mp4", content=b"not a video").status_code == 400
@@ -1016,3 +1018,38 @@ def test_meeting_time_from_filename(tmp: Path) -> None:
     import os, time as _t
     os.utime(src, (1_000_000_000, 1_000_000_000))
     assert meeting_time(src.name, src) == _t.strftime("%Y-%m-%dT%H:%M:%S", _t.localtime(1_000_000_000))
+
+
+def test_video_serves_ranges_and_disappears_with_the_meeting(client: TestClient) -> None:
+    """A line is watched by seeking one <video>, which needs Range — without it the browser has to
+    fetch a two-hour meeting before it can play the line an hour in."""
+    session = seed_session("range-test.wav")
+    video = config.RECORDINGS_DIR / "range-test.mp4"
+    video.write_bytes(bytes(range(256)) * 8)
+    main.store.set_media_path(session, str(video))
+
+    assert next(s for s in client.get("/api/sessions").json() if s["id"] == session)["hasVideo"]
+
+    whole = client.get(f"/api/sessions/{session}/video")
+    assert whole.status_code == 200 and len(whole.content) == 2048
+    assert whole.headers["accept-ranges"] == "bytes"
+
+    part = client.get(f"/api/sessions/{session}/video", headers={"Range": "bytes=10-19"})
+    assert part.status_code == 206
+    assert part.content == video.read_bytes()[10:20]
+    assert part.headers["content-range"] == "bytes 10-19/2048"
+
+    open_ended = client.get(f"/api/sessions/{session}/video", headers={"Range": "bytes=2040-"})
+    assert open_ended.status_code == 206 and len(open_ended.content) == 8
+
+    assert client.get(f"/api/sessions/{session}/video",
+                      headers={"Range": "bytes=9000-"}).status_code == 416
+
+    # A copy this project made goes with the meeting; nothing can reach it once the session is gone.
+    assert client.delete(f"/api/sessions/{session}").status_code == 200
+    assert not video.exists()
+
+
+def test_video_404s_for_a_meeting_that_has_none(client: TestClient) -> None:
+    session = seed_session("no-video.wav")
+    assert client.get(f"/api/sessions/{session}/video").status_code == 404

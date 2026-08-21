@@ -69,6 +69,10 @@ export function Sessions() {
   const [savingRef, setSavingRef] = useState(false);
   const tablistRef = useRef<HTMLDivElement>(null);
   const player = useRef<HTMLAudioElement | null>(null);
+  // The imported video, when the meeting has one: seeking one element beats cutting a clip per
+  // line, and a face settles who spoke where a voice alone does not.
+  const video = useRef<HTMLVideoElement | null>(null);
+  const stopAt = useRef<number | null>(null); // where the playing line ends, so it stops there
   // Read inside the callback so it does not have to depend on `playing` — a callback that changes
   // identity on every play invalidates all 943 memoised rows, which is what this is avoiding.
   const playingRef = useRef<number | null>(null);
@@ -83,6 +87,7 @@ export function Sessions() {
   // Playing a line, hearing a speaker and re-deriving the transcript all read the recording. When
   // it is gone they all fail the same way, so the page says so once instead of per click.
   const hasRecording = current?.hasRecording ?? true;
+  const hasVideo = current?.hasVideo ?? false;
   // The pass calls replace_lines, which drops every line and writes new ones with new ids. An edit
   // saved during that window is silently discarded while the screen shows it saved, so editing is
   // closed rather than left to look like it worked. Scoped to the mutating stages: a summarize-only
@@ -399,9 +404,28 @@ export function Sessions() {
   // No hasRecording check here: the button carries `playable`, so it is disabled when there is
   // nothing to play. Re-checking would also make this callback depend on a value that changes with
   // the session, which is exactly what the memoised rows must not see.
-  const playLine = useCallback((lineId: number) => {
+  // The row passes its own start and end: looking them up here would mean depending on `lines`,
+  // and a callback that changes with the transcript invalidates all 943 memoised rows.
+  const playLine = useCallback((lineId: number, start: number, end: number | null) => {
     if (selected === null) return;
     const setNow = (v: number | null) => { playingRef.current = v; setPlaying(v); };
+    // With a video, the line is watched in place: seek the one player to the line and stop where
+    // the line ends. No clip request, and the picture is what the audio-only path cannot give.
+    // The element itself is the test — it is rendered only for a meeting that has a video, so
+    // this callback needs no dependency on which meeting that is.
+    const el = video.current;
+    if (el) {
+      if (playingRef.current === lineId) {
+        el.pause();
+        setNow(null);
+        return;
+      }
+      el.currentTime = start;
+      stopAt.current = end;
+      setNow(lineId);
+      void el.play().catch(() => { setNow(null); toast.error(t('sessions.playFailed')); });
+      return;
+    }
     const audio = (player.current ??= new Audio());
     if (playingRef.current === lineId) {
       audio.pause();
@@ -435,6 +459,7 @@ export function Sessions() {
   // Switching session or tab leaves a clip playing over a transcript that is no longer on screen.
   useEffect(() => {
     player.current?.pause();
+    video.current?.pause();
     setPlaying(null);
   }, [selected, tab]);
 
@@ -874,6 +899,26 @@ export function Sessions() {
             <p className="sess-refine-error">{t('sessions.refineFailedReason', { reason: refineError })}</p>
           )}
           {!hasRecording && <p className="sess-no-audio">{t('sessions.noRecording')}</p>}
+          {hasVideo && (
+            // Sticky, so the picture stays put while the transcript scrolls past it — a line
+            // clicked at the bottom of a two-hour meeting is no use if its video is off screen.
+            <video
+              ref={video}
+              className="sess-video"
+              controls
+              preload="metadata"
+              aria-label={t('sessions.videoLabel')}
+              src={`${API_BASE_URL}/sessions/${selected}/video`}
+              onPause={() => { playingRef.current = null; setPlaying(null); }}
+              onTimeUpdate={() => {
+                const el = video.current;
+                if (!el || stopAt.current === null || playingRef.current === null) return;
+                // Stop where the line stops. Dragging the scrubber past it stops too, which is
+                // the same thing said differently: what was playing is over.
+                if (el.currentTime >= stopAt.current) el.pause();
+              }}
+            />
+          )}
           {failed.length > 0 && (
             // Aggregated as well as marked inline: a two-hour meeting failing 5% is forty-odd
             // marks scattered through the transcript, and nobody finds those by scrolling.

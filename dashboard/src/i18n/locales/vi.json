@@ -110,6 +110,7 @@
     "newSpeaker": "＋ Người nói mới ({{code}})",
     "playFailed": "Câu này không có âm thanh được ghi.",
     "noRecording": "Bản ghi của cuộc họp này không còn trên đĩa, nên không thể phát lại.",
+    "videoLabel": "Video của cuộc họp này",
     "reprocess": "Xử lý lại",
     "reprocessing": "Đang xử lý lại…",
     "reprocessHint": "Dựng lại bản ghi này từ âm thanh bằng mô hình lớn nhất. Mọi dòng đều bị thay thế, nên các sửa tay ở đây sẽ mất.",

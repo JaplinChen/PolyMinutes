@@ -111,6 +111,8 @@ export interface SessionSummary {
   refine: { state: RefineState; stage?: RefineStage; error: string };
   /** Whether the recording this session was made from is still on disk. */
   hasRecording: boolean;
+  /** Whether the video this meeting was imported from is still readable — false for a live capture. */
+  hasVideo: boolean;
   /** Pre-meeting notes — agenda, attendees, slides — folded into the summary prompt. */
   reference: string;
 }

@@ -115,6 +115,12 @@ class Store(SpeakerStore):
             self._db.commit()
             return int(cur.lastrowid)
 
+    def set_media_path(self, session_id: int, path: str) -> None:
+        """Where the video this meeting came from lives, so a line can be watched as well as heard."""
+        with self._lock:
+            self._db.execute("UPDATE session SET media_path=? WHERE id=?", (_portable(path), session_id))
+            self._db.commit()
+
     def set_reference(self, session_id: int, text: str) -> None:
         """Store the meeting's pre-meeting notes. Not a transcript change, so lines_rev is untouched:
         a summary already generated stays 'current', and the user regenerates it if they want the
