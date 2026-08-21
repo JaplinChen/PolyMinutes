@@ -19,6 +19,8 @@ import difflib
 import re
 from dataclasses import dataclass
 
+from opencc import OpenCC
+
 from .store import Term
 
 # How far apart two spellings may be, as a fraction of the term's own length, before they stop
@@ -215,6 +217,47 @@ def _widenable(char: str) -> bool:
     return bool(HAN.fullmatch(char)) and char not in PARTICLES
 
 
+# Anything a rule may not be about. A hand edit fixes three things at once — the word that was
+# misheard, the punctuation the decoder never wrote, and whichever characters the typist's own
+# keyboard produced — and only the first generalises. The other two arrive here looking exactly
+# like a term pair and are then applied, literally, to every later transcript.
+PUNCTUATION = set(" 	，。、！？：；「」（）,.!?:;-—·")
+_to_simplified = OpenCC("t2s")
+# The same converter asr.py runs every decode through, so "already Traditional" means the same
+# thing on both sides of the pipeline.
+_to_traditional = OpenCC("s2tw")
+
+
+def _is_a_term_pair(before: str, after: str) -> bool:
+    """Whether this difference is about a word, and not about typing.
+
+    Audited against the corrections a real room accumulated over three weeks: 239 rules, five of
+    them written by this function and none of them about vocabulary —
+
+        內銷 -> 内销        the typist pasted Simplified; the rule then converts correct output
+        臺相 -> 台相        back to Simplified, the failure asr.py's OpenCC exists to stop
+        盼表現期首 -> 。首   five characters replaced by a full stop
+        報 -> ，報          a comma, applied to every 報 in every meeting after it
+        下我們 -> 下。
+
+    Each fires as a literal substitution on text nobody was looking at when the edit was made,
+    which is the shape of the poisoning that cost a transcript once already. A rule earns its
+    place by naming a word the decoder got wrong; punctuation and character variants are edits to
+    one line and stay there.
+    """
+    if any(c in PUNCTUATION for c in after) or any(c in PUNCTUATION for c in before):
+        return False
+    # Same word, different script. Normalised on both sides, because the pair may be written
+    # either direction and neither direction is a vocabulary correction.
+    if _to_simplified.convert(before) == _to_simplified.convert(after):
+        return False
+    # The replacement has to be written the way the transcript is written. 對於沒 -> 这里没 is a
+    # real change of words, so the check above lets it through, and it would then write Simplified
+    # into every later transcript through the back door — the typist pasted from somewhere else,
+    # which is a fact about their clipboard, not about the vocabulary.
+    return _to_traditional.convert(after) == after
+
+
 def _trim(before: str, after: str) -> tuple[str, str]:
     """Drop matching particles from both ends, keeping the two strings aligned."""
     while len(after) > MIN_LEN and before[:1] == after[:1] and after[0] in PARTICLES:
@@ -254,7 +297,8 @@ def diff_terms(original: str, candidate: str) -> list[tuple[str, str]]:
         # then rewrote every 的 in every later transcript. A one-character or all-particle wrong
         # side is a sentence fragment, not a term worth generalising.
         if MIN_LEN <= len(after) <= MAX_LEN and before != after \
-                and len(before) >= MIN_LEN and not all(c in PARTICLES for c in before):
+                and len(before) >= MIN_LEN and not all(c in PARTICLES for c in before) \
+                and _is_a_term_pair(before, after):
             out.append((before, after))
     return out
 
