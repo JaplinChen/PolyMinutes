@@ -24,10 +24,21 @@ from opencc import OpenCC
 
 from . import config
 
-# s2twp = Simplified -> Traditional with Taiwan phrase conversion ("軟件" -> "軟體").
 # Whisper emits Simplified for zh regardless of the speaker, and Simplified subtitles on the
 # meeting-room TV are an immediately visible failure.
-_to_traditional = OpenCC("s2twp")
+#
+# s2t, not s2twp. The Taiwan *phrase* tables are a software glossary, and this room is a factory:
+# measured on the 2026-08-05 meeting they rewrote 參數 to 引數 four times and 項目 to 專案 twice,
+# both wrong when the subject is welding jigs. s2t already gives 下週, 參數 and 回饋, so the phrase
+# tables were only ever adding the software vocabulary. refine.py dropped s2twp for the same
+# reason (see the note there); this is that decision on the ASR side. Taiwan words that genuinely
+# need converting belong in the glossary, where a human decided it.
+#
+# s2tw and not the bare s2t, because s2t alone writes 纔 for 才 — 那纔是你的成就, 剛纔, and 纔夠,
+# which is the glossary's own protected term arriving in a spelling the corrector will not match.
+# s2tw is s2t plus the Taiwan character variants and nothing else: it fixes 纔 without bringing
+# back the phrase table that produced 引數.
+_to_traditional = OpenCC("s2tw")
 
 # Han, kana and hangul count as one token each; Latin words as one per word. Kana and hangul are
 # here because Whisper reaches for them when decoding noise, and that output collapses too.
@@ -97,15 +108,21 @@ _HALLUCINATIONS = re.compile(
     r"|歡迎收[看睇]|感謝收[看睇]|本集(?!團).{0,4}(完|結束|到此)|本期(完|播放)|本節目|下部節目"
     # 收看 is television vocabulary; a meeting says 看 or 收到. The gap allows 謝謝大家的收看,
     # which is what the recording actually produced. 收睇 and 多謝 are the same sign-off in
-    # Cantonese — 多謝您收睇時局新聞,再會! arrived on a re-run over near-silence.
-    r"|(請您|敬請|歡迎)關注|(謝謝|感謝|多謝)[^。！!]{0,4}收[看睇]"
+    # Cantonese — 多謝您收睇時局新聞,再會! arrived on a re-run over near-silence. 觀看 joins them
+    # for 多謝您的觀看, which the 2026-08-05 re-run produced twice over near-silence: 謝謝觀看 was
+    # already blocked outright, and this is the same sign-off with two characters in the middle.
+    # What it must not reach is 感謝大家的努力, from the same recording and genuinely said — which
+    # it does not, because the thanks has to land on 收看 or 觀看.
+    r"|(請您|敬請|歡迎)關注|(謝謝|感謝|多謝)[^。！!]{0,4}(收[看睇]|觀看)"
     # The editor's credit, whole-line only. A wildcard after 剪輯 would eat 剪輯機台 and
     # 影片剪輯外包, and this filter runs on the live path too, where a false positive drops a
     # subtitle with nothing to show it happened. So: the line is nothing but 剪輯 and a name.
     r"|^剪輯[·:：]?[一-鿿]{2,3}$"
     # Anchored at the end: a sign-off is the last thing in the line, while 我們下次見面再談 is
     # someone arranging a meeting — and 我們下回見面再談 is the same sentence.
-    r"|(下次|下期|下集|下回)見(再見|囉)?[。！!]?$|多多支援|請按贊|支持明鏡",
+    # 再 is allowed between: the sign-off arrives as 下次再見 as often as 下次見, and 我們下次再
+    # 見面談 still needs the 見 at the end of the line to match, which it is not.
+    r"|(下次|下期|下集|下回)再?見(再見|囉)?[。！!]?$|多多支援|請按贊|支持明鏡",
     re.IGNORECASE,
 )
 

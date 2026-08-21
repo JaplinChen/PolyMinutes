@@ -16,6 +16,7 @@ from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 import numpy as np
 import sherpa_onnx
@@ -95,6 +96,28 @@ CHUNK_OVERLAP_SECONDS = 20.0
 # against the whole file's 56%, and scores identically on the ten utterances that can be
 # attributed by what is being said: 33 of 33 pairs from different people kept apart.
 TURN_CLUSTER_THRESHOLD = 0.40
+# Regrouping the turn labels once the whole meeting is available, on one pooled embedding per
+# label instead of one per turn. See `regroup_speakers`.
+#
+# POOLED_SECONDS is what a label contributes: a minute of one voice is a stable print where two
+# seconds is not, and past a minute the centroid stops moving. POOLED_MIN_SECONDS is the floor
+# below which a label is left alone entirely — an eight-second code cannot be told from anyone.
+POOLED_SECONDS = 60.0
+POOLED_MIN_SECONDS = 5.0
+# The bar two pooled labels must clear to be one person. Measured on the 2026-08-05 factory
+# meeting (46 labels, 21 of them past the floor), scored against the sections the human transcript
+# attributes to a single named person:
+#
+#     same person, must merge      0.645 - 0.965   (chairman's seven labels: 0.838 - 0.965)
+#     different people, must not   0.461 - 0.637
+#
+# 0.75 sits in the empty band between them with room on both sides, and merged the chairman's
+# seven labels into one, the QC manager's four into one, and nothing across two people. It
+# deliberately leaves two of the general manager's labels behind, at 0.705 and 0.645: reaching
+# them means crossing 0.637, where the sixth-plant report joins the general manager. Same trade
+# as `cluster_offline` — one person in several boxes is tedious and fixable by hand, one box
+# holding two people is neither.
+POOLED_THRESHOLD = 0.75
 # Workers, whatever the core count. Each one holds both models and its slice of audio — call it
 # 300 MB — so a twenty-core box would otherwise start eighteen of them and want five gigabytes for
 # a background task. Eight already took 15 minutes of audio from 47.7s to 10.6s; past that the
@@ -319,6 +342,114 @@ def _cache_path(wav: Path) -> Path:
 def speaker_code(speaker: int) -> str:
     """Segmenter ids are arbitrary integers; the transcript shows S1, S2, ... in that order."""
     return f"S{speaker + 1}" if speaker >= 0 else ""
+
+
+def regroup_speakers(wav: Path, found: list[Turn], embed: Callable[[np.ndarray], np.ndarray],
+                     threshold: float | None = None) -> list[Turn]:
+    """Rejoin labels that are one person, on a minute of their voice instead of two seconds of it.
+
+    `turns` clusters one embedding per turn, and a turn is short: complete linkage at
+    TURN_CLUSTER_THRESHOLD then splits a long speaker across many labels, which that function
+    accepts on purpose because the alternative merges different people. This undoes the split
+    without taking that risk, because it asks a question the first pass could not — it pools every
+    turn a label holds into one clip and embeds that. A minute of speech separates voices that two
+    seconds cannot.
+
+    On the 2026-08-05 meeting the chairman arrived as seven labels and the QC manager as four; the
+    transcript showed his eleven-minute address alternating between S33, S35, S36, S37, S38 and
+    S43, which is also what stopped `postprocess.merge_runs` from joining his sentences. This
+    turned 46 labels into 11 with nothing merged across two people.
+
+    Labels holding less than POOLED_MIN_SECONDS keep their own identity: there is not enough of
+    them to be sure of, and guessing is the failure this whole function exists to avoid.
+    """
+    thr = POOLED_THRESHOLD if threshold is None else threshold
+    if not found:
+        return found
+
+    turns_by_label: dict[int, list[Turn]] = {}
+    for turn in found:
+        turns_by_label.setdefault(turn.speaker, []).append(turn)
+    if len(turns_by_label) < 2:
+        return found
+
+    audio, rate = sf.read(str(wav), dtype="float32")
+    if rate != config.SAMPLE_RATE:
+        raise ValueError(f"{wav} is {rate} Hz, expected {config.SAMPLE_RATE}")
+    if audio.ndim > 1:
+        audio = audio.mean(axis=1)
+
+    labels: list[int] = []
+    pooled: list[np.ndarray] = []
+    for label, group in turns_by_label.items():
+        clips, seconds = [], 0.0
+        # Longest turns first: they are the ones least likely to straddle a handover, and they
+        # reach the budget in fewer pieces.
+        for turn in sorted(group, key=lambda t: t.start - t.end):
+            if seconds >= POOLED_SECONDS:
+                break
+            head = int(round(turn.start * config.SAMPLE_RATE))
+            tail = int(round(turn.end * config.SAMPLE_RATE))
+            clips.append(audio[head:tail])
+            seconds += turn.end - turn.start
+        if seconds >= POOLED_MIN_SECONDS and clips:
+            labels.append(label)
+            pooled.append(embed(np.concatenate(clips)))
+
+    if len(labels) < 2:
+        return found
+
+    merged = cluster_offline(pooled, threshold=thr)
+    # Every group keeps the smallest label in it, so a speaker who was already one label is
+    # untouched and the numbering stays close to what the first pass produced.
+    winner: dict[int, int] = {}
+    for label, group in zip(labels, merged):
+        winner[group] = min(label, winner.get(group, label))
+    rename = {label: winner[group] for label, group in zip(labels, merged) if winner[group] != label}
+    if not rename:
+        return found
+
+    log.info("regrouped %d turn labels into %d speakers", len(labels), len(set(merged)))
+    return _heal(_absorb_strays([Turn(t.start, t.end, rename.get(t.speaker, t.speaker))
+                                 for t in found]))
+
+
+def _absorb_strays(found: list[Turn]) -> list[Turn]:
+    """A label holding less than POOLED_MIN_SECONDS of the whole meeting belongs to its neighbour.
+
+    These are what is left after the regroup: labels it could not judge, because there was not
+    enough of them to embed. Twenty-five of the 2026-08-05 meeting's 36 labels were this, holding
+    54 seconds between them — under two seconds each across an hour. That is not a participant who
+    said very little, it is the segmenter cutting mid-sentence, and leaving them their own identity
+    breaks the run the sentence was in.
+
+    Same rule the splitter already applies below MIN_PIECE_SECONDS and `_inherit_missing` applies
+    to a blank: the fragment belongs to whoever was talking around it. It does cost a genuine
+    two-word interjection its own line, which is the trade both of those already make.
+    """
+    held: dict[int, float] = {}
+    for turn in found:
+        held[turn.speaker] = held.get(turn.speaker, 0.0) + (turn.end - turn.start)
+    stray = {label for label, seconds in held.items() if seconds < POOLED_MIN_SECONDS}
+    if not stray or len(stray) == len(held):
+        return found
+
+    ordered = sorted(found, key=lambda t: t.start)
+    owners: list[int] = []
+    previous = -1
+    for turn in ordered:
+        if turn.speaker not in stray:
+            previous = turn.speaker
+        owners.append(previous if turn.speaker in stray else turn.speaker)
+    # Strays before the first real label have nothing behind them to inherit from.
+    following = -1
+    for i in reversed(range(len(ordered))):
+        if owners[i] >= 0:
+            following = owners[i]
+        elif following >= 0:
+            owners[i] = following
+    return [Turn(t.start, t.end, owner if owner >= 0 else t.speaker)
+            for t, owner in zip(ordered, owners)]
 
 
 def cached_turns(wav: Path) -> list[Turn] | None:

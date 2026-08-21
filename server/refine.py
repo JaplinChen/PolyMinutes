@@ -34,10 +34,12 @@ CONTEXT_LINES = 4
 
 NUMBERED = re.compile(r"^\s*(\d+)\s*[:：.]\s*(.*)$")
 
-# Character-level Simplified -> Traditional, deliberately not the s2twp used on ASR output. The
-# model writes the odd Simplified character (保税 for 保稅) and that has to go, but s2twp also
-# rewrites vocabulary — 對象 to 物件, 軟件 to 軟體 — which would edit words the speaker chose.
-_to_traditional = OpenCC("s2t")
+# Character-level Simplified -> Traditional, deliberately not s2twp. The model writes the odd
+# Simplified character (保税 for 保稅) and that has to go, but s2twp also rewrites vocabulary —
+# 對象 to 物件, 軟件 to 軟體 — which would edit words the speaker chose. Same profile as asr.py,
+# which switched off s2twp for the same reason; s2tw rather than the bare s2t because s2t writes
+# 纔 for 才.
+_to_traditional = OpenCC("s2tw")
 
 
 @dataclass

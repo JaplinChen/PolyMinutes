@@ -7,6 +7,7 @@ was misidentified -- and the clustering is judged by the speech it groups, not b
 from __future__ import annotations
 
 import os
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -52,6 +53,31 @@ def test_a_phantom_english_speaker_does_not_outvote_a_chinese_meeting() -> None:
     # A participant who really does speak English still keeps it.
     real = [said("S10", "zh")] * 570 + [said("S3", "en")] * 40
     assert postprocess.dominant_languages(real)["S3"] == "en"
+
+
+def test_one_decode_gets_one_language_vote_however_many_clips_it_held() -> None:
+    """The batched recogniser reports one language for sixty-four clips at a time.
+
+    Counting that per clip invents sixty-four agreeing witnesses out of one reading. On the
+    2026-08-10 meeting a single batch came back English and wrote 64 runs of English translation
+    into a Mandarin factory meeting — 8.4% of the transcript, over MIN_MINORITY_SHARE, which is
+    sized for a real minority speaker and cannot be lowered to catch this.
+    """
+    def said(speaker: str, lang: str, decode: int) -> postprocess.Utterance:
+        u = postprocess.Utterance(0.0, np.zeros(1, dtype="float32"), speaker, lang, "x")
+        u.decode = decode
+        return u
+
+    # S5 talks through twelve batches; one of them came back English for everything in it.
+    meeting = [said("S5", "zh", b) for b in range(12) for _ in range(60)]
+    meeting += [said("S5", "en", 99) for _ in range(64)]
+    assert postprocess.dominant_languages(meeting)["S5"] == "zh"
+
+    # The same 64 English clips, had they really been read one at a time, are still not enough
+    # against twelve batches — but a speaker who is English across many decodes keeps it.
+    english = [said("S5", "zh", b) for b in range(3) for _ in range(60)]
+    english += [said("S5", "en", b) for b in range(10, 30)]
+    assert postprocess.dominant_languages(english)["S5"] == "en"
 
 
 def test_clustering_is_judged_by_speech_not_cluster_count() -> None:
@@ -135,6 +161,28 @@ def test_recognition_is_retried_once_the_centroid_settles() -> None:
     assert d.recognised == {}, "no retry before the centroid has settled"
     d.assign(clip)
     assert d.recognised == {"S1": "Vincent"}, "the refined centroid names the voice"
+
+
+def test_learning_is_stricter_than_naming() -> None:
+    """Auto-learning must sit above the assertion bar, not below it.
+
+    It did sit below, for one release: the assertion bar moved to 0.80 on measured data and
+    AUTO_LEARN_THRESHOLD stayed at 0.75, so every name the recogniser asserted was also folded
+    back into that person's roster. A wrong name is one line somebody can fix; a wrong name that
+    taught itself is in the roster forever, and on the 2026-08-05 meeting one arrived — eight
+    seconds of the QC manager, named 三董 at 0.764, learned, and invisible from then on.
+    """
+    assert config.AUTO_LEARN_THRESHOLD > config.KNOWN_SPEAKER_THRESHOLD, (
+        config.AUTO_LEARN_THRESHOLD, config.KNOWN_SPEAKER_THRESHOLD)
+
+
+def test_the_naming_bar_clears_the_measured_stranger(tmp: Path = None) -> None:
+    """0.759 is the highest a stranger scored on the labelled meeting — 總經理's print against a
+    roster holding 人事Martin經理 but not him. The bar has to sit above it, or the open-set case
+    the recogniser actually meets is the one it fails."""
+    assert config.KNOWN_SPEAKER_THRESHOLD > 0.759, config.KNOWN_SPEAKER_THRESHOLD
+    # And below the worst genuine match on that set, or real names go unrecognised.
+    assert config.KNOWN_SPEAKER_THRESHOLD <= 0.854, config.KNOWN_SPEAKER_THRESHOLD
 
 
 def test_cosine() -> None:
@@ -783,3 +831,147 @@ def test_healing_does_not_shorten_a_turn_it_absorbs() -> None:
     """An overlapping pair must end at the later end, or the tail of the sentence is dropped."""
     overlapping = [diarize.Turn(0.0, 20.0, 5), diarize.Turn(19.8, 19.9, 5)]
     assert diarize._heal(overlapping) == [diarize.Turn(0.0, 20.0, 5)]
+
+
+def _labelled(start: float, seconds: float, speaker: str) -> postprocess.Utterance:
+    u = _utterance(start, seconds)
+    u.speaker = speaker
+    return u
+
+
+def _ramp_wav(seconds: float) -> Path:
+    """A ramp, not silence: merge_runs slices the file, and a slice of zeros proves nothing about
+    whether it sliced the right seconds."""
+    import soundfile as sf
+
+    n = int(seconds * config.SAMPLE_RATE)
+    path = Path(tempfile.mkdtemp()) / "merge.wav"
+    sf.write(str(path), np.arange(n, dtype=np.float32) / n, config.SAMPLE_RATE)
+    return path
+
+
+def test_one_speakers_breaths_are_decoded_as_one_clip() -> None:
+    """The VAD ends an utterance on silence, which is not where a sentence ends. Handing Whisper
+    the 1.8-second pieces is what produced 「料理 互動」on a real meeting; handing it the whole run
+    gives it a sentence to decline against."""
+    wav = _ramp_wav(30.0)
+    given = [_labelled(1.0, 2.0, "S1"), _labelled(3.5, 2.0, "S1"), _labelled(6.0, 2.0, "S1")]
+    merged = postprocess.merge_runs(given, wav)
+
+    assert len(merged) == 1, [ (u.start, len(u.samples)) for u in merged ]
+    assert merged[0].start == 1.0 and merged[0].speaker == "S1"
+    # 1.0s to 8.0s of the recording, pauses included — sliced from the file, not spliced together.
+    assert len(merged[0].samples) == int(7.0 * config.SAMPLE_RATE), len(merged[0].samples)
+    audio, _ = __import__("soundfile").read(str(wav), dtype="float32")
+    assert np.array_equal(merged[0].samples,
+                          audio[int(1.0 * config.SAMPLE_RATE):int(8.0 * config.SAMPLE_RATE)])
+
+
+def test_a_run_ends_at_a_speaker_change_a_real_stop_and_the_window() -> None:
+    """Three things end a run, and each has to, or the merge either glues two people together or
+    hands Whisper more than its 30-second window holds."""
+    wav = _ramp_wav(120.0)
+
+    # Somebody else takes the floor.
+    other = [_labelled(0.0, 2.0, "S1"), _labelled(2.5, 2.0, "S2"), _labelled(5.0, 2.0, "S1")]
+    assert [u.speaker for u in postprocess.merge_runs(other, wav)] == ["S1", "S2", "S1"]
+
+    # A pause past MERGE_MAX_GAP is a stop, not a breath.
+    paused = [_labelled(0.0, 2.0, "S1"),
+              _labelled(2.0 + postprocess.MERGE_MAX_GAP + 0.1, 2.0, "S1")]
+    assert len(postprocess.merge_runs(paused, wav)) == 2
+
+    # A speaker who never pauses is still cut at the window.
+    long_run = [_labelled(i * 2.5, 2.0, "S1") for i in range(20)]
+    merged = postprocess.merge_runs(long_run, wav)
+    assert len(merged) > 1
+    for u in merged:
+        assert len(u.samples) / config.SAMPLE_RATE <= postprocess.MERGE_MAX_SECONDS, u.start
+    # Nothing is dropped on the way: every original utterance is still inside some run.
+    covered = [(u.start, u.start + len(u.samples) / config.SAMPLE_RATE) for u in merged]
+    for u in long_run:
+        end = u.start + len(u.samples) / config.SAMPLE_RATE
+        assert any(a - 1e-6 <= u.start and end <= b + 1e-6 for a, b in covered), u.start
+
+
+def test_merge_leaves_a_transcript_it_cannot_improve_alone() -> None:
+    """One utterance, or none, is returned untouched — and without reading the recording."""
+    single = [_labelled(0.0, 2.0, "S1")]
+    assert postprocess.merge_runs(single, Path("does-not-exist.wav")) is single
+    assert postprocess.merge_runs([], Path("does-not-exist.wav")) == []
+
+
+def test_one_speaker_split_across_labels_is_put_back_together() -> None:
+    """The turn pass clusters one embedding per turn, and a turn is short, so a long speaker comes
+    back as several labels — on the 2026-08-05 meeting the chairman was seven of them, which is
+    what stopped his sentences merging. Pooling a minute of each label answers what two seconds
+    could not."""
+    voices = {0: np.array([1.0, 0.0, 0.0], dtype=np.float32),
+              1: np.array([0.0, 1.0, 0.0], dtype=np.float32)}
+    # Labels 3, 4 and 5 are one voice; 9 is another. Each holds well past POOLED_MIN_SECONDS.
+    found = [diarize.Turn(0.0, 20.0, 3), diarize.Turn(20.0, 40.0, 9),
+             diarize.Turn(40.0, 60.0, 4), diarize.Turn(60.0, 80.0, 9),
+             diarize.Turn(80.0, 100.0, 5)]
+    same = {3: voices[0], 4: voices[0], 5: voices[0], 9: voices[1]}
+    wav = _ramp_wav(120.0)
+
+    seen: list[int] = []
+
+    def embed(samples: np.ndarray) -> np.ndarray:
+        # Which label this pooling belongs to is recoverable from its length, which is the point:
+        # a label contributes all of its turns, not one of them.
+        seen.append(len(samples))
+        for label, turns in _by_label(found).items():
+            if len(samples) == sum(int(round(t.end * config.SAMPLE_RATE))
+                                   - int(round(t.start * config.SAMPLE_RATE)) for t in turns):
+                return same[label]
+        raise AssertionError(len(samples))
+
+    regrouped = diarize.regroup_speakers(wav, found, embed, threshold=0.9)
+    labels = {t.speaker for t in regrouped}
+    assert len(labels) == 2, sorted((t.start, t.speaker) for t in regrouped)
+    # The three that were one voice now share a label, and it is the lowest of the three.
+    assert {t.speaker for t in regrouped if t.start in (0.0, 40.0, 80.0)} == {3}
+    assert {t.speaker for t in regrouped if t.start in (20.0, 60.0)} == {9}
+    assert len(seen) == 4, seen
+
+
+def _by_label(found):
+    out = {}
+    for turn in found:
+        out.setdefault(turn.speaker, []).append(turn)
+    return out
+
+
+def test_regroup_leaves_two_people_apart() -> None:
+    """The failure this cannot have. One box holding two people is not fixable by the person
+    reading the transcript; one person in two boxes is tedious and is."""
+    found = [diarize.Turn(0.0, 20.0, 1), diarize.Turn(20.0, 40.0, 2)]
+    apart = {1: np.array([1.0, 0.0], dtype=np.float32), 2: np.array([0.0, 1.0], dtype=np.float32)}
+    wav = _ramp_wav(60.0)
+    order = iter([apart[1], apart[2]])
+    regrouped = diarize.regroup_speakers(wav, found, lambda _s: next(order), threshold=0.75)
+    assert [t.speaker for t in regrouped] == [1, 2]
+
+
+def test_a_label_too_small_to_judge_goes_to_its_neighbour() -> None:
+    """Twenty-five of that meeting's 36 labels held 54 seconds between them — under two seconds
+    each across an hour. That is the segmenter cutting mid-sentence, not a participant, and giving
+    it its own identity breaks the run the sentence was in."""
+    found = [diarize.Turn(0.0, 30.0, 1), diarize.Turn(30.0, 31.0, 7), diarize.Turn(31.0, 60.0, 1)]
+    # Boundaries are untouched; only the label changes. The caller's _heal joins them after.
+    assert diarize._absorb_strays(found) == [diarize.Turn(0.0, 30.0, 1),
+                                             diarize.Turn(30.0, 31.0, 1),
+                                             diarize.Turn(31.0, 60.0, 1)]
+
+    # A stray before anyone real has nothing behind it, so it takes what follows instead.
+    leading = [diarize.Turn(0.0, 1.0, 7), diarize.Turn(1.0, 40.0, 2)]
+    assert [t.speaker for t in diarize._absorb_strays(leading)] == [2, 2]
+
+    # A speaker who really did hold the floor is not absorbed into whoever spoke before them.
+    real = [diarize.Turn(0.0, 30.0, 1), diarize.Turn(30.0, 40.0, 2)]
+    assert diarize._absorb_strays(real) == real
+
+    # Everyone being small means the recording is short, not that nobody spoke.
+    tiny = [diarize.Turn(0.0, 1.0, 1), diarize.Turn(1.0, 2.0, 2)]
+    assert diarize._absorb_strays(tiny) == tiny

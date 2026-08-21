@@ -135,7 +135,9 @@ def test_the_sign_offs_a_real_meeting_produced() -> None:
     for text in ("剪輯 李宗盛", "本期的影片到這裡 再見", "中文字幕 沛隊字幕小組",
                  "我們下回見 再見", "謝謝您的收看", "下部節目了",
                  "本集就這樣結束了", "本期完", "本期播放",
-                 "謝謝大家的收看", "中文字幕提供"):
+                 "謝謝大家的收看", "中文字幕提供",
+                 # From the 2026-08-05 re-run, over near-silence in the middle of the QC report.
+                 "多謝您的觀看 下次再見", "多謝您的觀看"):
         assert asr.is_hallucination(text), text
     # Simplified too: the filter runs before `_post` converts.
     for text in ("谢谢您的收看", "本集就这样结束了"):
@@ -149,6 +151,9 @@ def test_the_new_sign_off_patterns_spare_a_factory_meeting() -> None:
                  "影片剪輯外包給誰",            # 剪輯 mid-sentence
                  "剪輯 這個要重做一次不然來不及",  # 剪輯 then real speech, not a name
                  "我們下回見面再談",            # 下回見 continuing into a sentence
+                 "我們下次再見面談這個",         # 下次再見 continuing into a sentence
+                 "感謝大家的努力",              # real, from the same meeting as 多謝您的觀看
+                 "感謝大家的幫忙",              # ditto, the line right after it
                  "本集團今年的目標是降低不良率",   # 本集團, not 本集
                  "本集團的專案結束了",           # 本集團 with an ending after it
                  "尾牙的節目安排請各部門回報",     # 節目 without 本/下部
