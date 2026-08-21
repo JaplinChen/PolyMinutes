@@ -75,7 +75,7 @@ interface Props {
   onSave: (lineId: number, source: string, previous: string) => void;
   onRerun: (lineId: number) => void;
   onRetranslate: (lineId: number) => void;
-  onPlay: (lineId: number) => void;
+  onPlay: (lineId: number, start: number, end: number | null) => void;
   onReassign: (lineId: number, speaker: string) => void;
 }
 
@@ -96,7 +96,7 @@ function Row({ line, speakerOptions, newSpeakerCode, langs, locked, pending, dra
           disabled={!playable}
           title={!playable ? t('sessions.noRecording') : isPlaying ? t('sessions.stopLine') : t('sessions.playLine')}
           aria-label={!playable ? t('sessions.noRecording') : isPlaying ? t('sessions.stopLine') : t('sessions.playLine')}
-          onClick={() => onPlay(line.id)}
+          onClick={() => onPlay(line.id, line.start, line.end_time)}
         >
           {isPlaying ? <Square size={11} /> : <Play size={11} />}
         </button>

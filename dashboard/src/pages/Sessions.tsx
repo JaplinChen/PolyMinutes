@@ -73,9 +73,6 @@ export function Sessions() {
   // line, and a face settles who spoke where a voice alone does not.
   const video = useRef<HTMLVideoElement | null>(null);
   const stopAt = useRef<number | null>(null); // where the playing line ends, so it stops there
-  // Read inside playLine for the same reason as playingRef: depending on `lines` would rebuild the
-  // callback on every transcript change and invalidate all 943 memoised rows.
-  const linesRef = useRef<TranscriptLine[]>([]);
   // Read inside the callback so it does not have to depend on `playing` — a callback that changes
   // identity on every play invalidates all 943 memoised rows, which is what this is avoiding.
   const playingRef = useRef<number | null>(null);
@@ -91,7 +88,6 @@ export function Sessions() {
   // it is gone they all fail the same way, so the page says so once instead of per click.
   const hasRecording = current?.hasRecording ?? true;
   const hasVideo = current?.hasVideo ?? false;
-  linesRef.current = lines;
   // The pass calls replace_lines, which drops every line and writes new ones with new ids. An edit
   // saved during that window is silently discarded while the screen shows it saved, so editing is
   // closed rather than left to look like it worked. Scoped to the mutating stages: a summarize-only
@@ -408,21 +404,24 @@ export function Sessions() {
   // No hasRecording check here: the button carries `playable`, so it is disabled when there is
   // nothing to play. Re-checking would also make this callback depend on a value that changes with
   // the session, which is exactly what the memoised rows must not see.
-  const playLine = useCallback((lineId: number) => {
+  // The row passes its own start and end: looking them up here would mean depending on `lines`,
+  // and a callback that changes with the transcript invalidates all 943 memoised rows.
+  const playLine = useCallback((lineId: number, start: number, end: number | null) => {
     if (selected === null) return;
     const setNow = (v: number | null) => { playingRef.current = v; setPlaying(v); };
     // With a video, the line is watched in place: seek the one player to the line and stop where
     // the line ends. No clip request, and the picture is what the audio-only path cannot give.
+    // The element itself is the test — it is rendered only for a meeting that has a video, so
+    // this callback needs no dependency on which meeting that is.
     const el = video.current;
-    if (hasVideo && el) {
+    if (el) {
       if (playingRef.current === lineId) {
         el.pause();
         setNow(null);
         return;
       }
-      const line = linesRef.current.find(l => l.id === lineId);
-      el.currentTime = line?.start ?? 0;
-      stopAt.current = line?.end_time ?? null;
+      el.currentTime = start;
+      stopAt.current = end;
       setNow(lineId);
       void el.play().catch(() => { setNow(null); toast.error(t('sessions.playFailed')); });
       return;
@@ -455,7 +454,7 @@ export function Sessions() {
     };
     void audio.play().catch(() => {});
     setNow(lineId);
-  }, [selected, hasVideo, t, toast]);
+  }, [selected, t, toast]);
 
   // Switching session or tab leaves a clip playing over a transcript that is no longer on screen.
   useEffect(() => {
