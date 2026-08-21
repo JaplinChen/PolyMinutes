@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import mimetypes
 import re
 import time
 from pathlib import Path
@@ -23,6 +24,9 @@ router = APIRouter()
 # whose end_time is wrong rather than a real utterance, and decoding it would tie up the card.
 RERUN_MAX_SECONDS = 60.0
 RERUN_PAD_SECONDS = 0.5
+# How much video one Range request without an end serves. Big enough that seeking is not a burst of
+# requests, small enough that no response is a meeting-sized allocation.
+VIDEO_CHUNK = 4 << 20
 
 
 @router.get("/api/sessions")
@@ -37,6 +41,7 @@ def get_sessions() -> list[dict]:
     # a speaker, re-deriving the transcript — fails without it, and the page could only find out by
     # trying: 943 play buttons that each produce the same error is not a way to learn that.
     return [{**s, "hasRecording": config.recording_path(s["wav_path"]).is_file(),
+             "hasVideo": bool(s.get("media_path")) and config.recording_path(s["media_path"]).is_file(),
              "refine": running.get(s["id"], {"state": "idle", "error": ""})}
             for s in main.store.sessions()]
 
@@ -152,6 +157,14 @@ def delete_session(session_id: int) -> dict:
     routes_speakers.harvest_speaker_clips(session_id)
     main.store.delete_session(session_id)
     wav = config.recording_path(session["wav_path"])
+    # Only a video this project copied in: a file on someone else's share was never ours to remove.
+    if media := session.get("media_path"):
+        path = config.recording_path(media)
+        if path.parent == config.RECORDINGS_DIR:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                log.warning("could not remove video %s", path)
     try:
         wav.unlink(missing_ok=True)
     except OSError:
@@ -438,13 +451,17 @@ async def import_recording(request: Request, filename: str = "upload") -> dict:
         raise HTTPException(400, str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(503, str(exc)) from exc
-    finally:
-        # The original video is not evidence — every stage after this reads the wav.
+    except BaseException:
+        # Nothing downstream will ever read a video whose audio could not be extracted.
         source.unlink(missing_ok=True)
+        raise
 
     started = ingest.meeting_time(Path(filename).name)
     session_id = main.store.start_session(started, str(wav))
     main.store.end_session(session_id, started)
+    # The original is kept, not deleted: a line is easier to attribute watched than heard, and the
+    # wav has no picture. It goes with the meeting when the meeting is deleted.
+    main.store.set_media_path(session_id, str(source))
     # Queued like a meeting that just ended, not decoded inline: a long recording used to hold this
     # request open for the whole pass — past most proxies' timeout — with nothing on screen saying
     # why. Through `_refine` the response returns as soon as the session exists, the dashboard's
@@ -483,6 +500,11 @@ def import_url(body: dict) -> dict:
     started = ingest.meeting_time(Path(url).name, None if is_link else Path(url))
     session_id = main.store.start_session(started, str(wav))
     main.store.end_session(session_id, started)
+    # A file on a share is watched where it already lives — copying gigabytes to gain a second copy
+    # of the same video is disk for nothing. A link is not kept: yt-dlp fetches bestaudio, so there
+    # is no video to keep without downloading the whole thing a second time.
+    if not is_link:
+        main.store.set_media_path(session_id, str(Path(url)))
 
     def run(cancel):
         cues, sub_lang = [], ""
@@ -522,6 +544,39 @@ def import_url(body: dict) -> dict:
                                                      main.state["llm"], main._api_key(), session_id),
                   needs_gpu=False)
     return {"id": session_id, **(jobs.state(session_id) or {})}
+
+
+@router.get("/api/sessions/{session_id}/video")
+def session_video(session_id: int, request: Request) -> Response:
+    """The meeting's original video, seekable.
+
+    Range by hand rather than FileResponse: this Starlette answers 200 with the whole file to a
+    Range request, and a <video> that cannot seek has to download a two-hour meeting before it can
+    play the line at 1:43:00. One slice per request, so nothing large is ever held in memory.
+    """
+    session = main.store.session(session_id)
+    if not session:
+        raise HTTPException(404, "no such session")
+    stored = session.get("media_path") or ""
+    path = config.recording_path(stored) if stored else None
+    if path is None or not path.is_file():
+        raise HTTPException(404, "no video for this meeting")
+
+    size = path.stat().st_size
+    kind = mimetypes.guess_type(path.name)[0] or "video/mp4"
+    head = {"Accept-Ranges": "bytes", "Content-Disposition": f'inline; filename="{path.name}"'}
+    match = re.match(r"bytes=(\d*)-(\d*)", request.headers.get("range", ""))
+    if not match or not match.group(1):
+        return Response(path.read_bytes(), media_type=kind, headers=head)
+    start = int(match.group(1))
+    if start >= size:
+        return Response(status_code=416, headers={**head, "Content-Range": f"bytes */{size}"})
+    end = min(int(match.group(2)) if match.group(2) else start + VIDEO_CHUNK - 1, size - 1)
+    with path.open("rb") as f:
+        f.seek(start)
+        block = f.read(end - start + 1)
+    return Response(block, status_code=206, media_type=kind,
+                    headers={**head, "Content-Range": f"bytes {start}-{end}/{size}"})
 
 
 @router.get("/api/sessions/{session_id}/markdown")

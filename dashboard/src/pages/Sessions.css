@@ -175,6 +175,19 @@
   height: 2rem;
 }
 
+/* Sticky rather than in the flow: clicking a line 90 minutes in must not scroll the picture away
+   from the text it belongs to. Capped so the transcript keeps most of the screen. */
+.sess-page .sess-video {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  width: 100%;
+  max-height: 40vh;
+  margin-bottom: var(--space-3);
+  border-radius: var(--radius-md);
+  background: #000;
+}
+
 .sess-page .sess-name-field span {
   min-width: 2.5rem;
   color: var(--text-secondary);

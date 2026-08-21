@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS session (
     ended     TEXT,
     wav_path  TEXT NOT NULL,
     lines_rev INTEGER NOT NULL DEFAULT 0,
-    reference TEXT NOT NULL DEFAULT ''
+    reference TEXT NOT NULL DEFAULT '',
+    media_path TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS line (
     id         INTEGER PRIMARY KEY,
@@ -129,6 +130,9 @@ SESSION_COLUMNS = (
     # Pre-meeting notes — agenda, attendees, slides — pasted by the user. Fed to the summary prompt
     # so it knows the meeting's own terms and priorities; '' for every session recorded before it.
     ("reference", "ALTER TABLE session ADD COLUMN reference TEXT NOT NULL DEFAULT ''"),
+    # The video the meeting was imported from, kept so a transcript line can be watched and not
+    # just heard — a face is what settles who was speaking. '' for a live capture, which has none.
+    ("media_path", "ALTER TABLE session ADD COLUMN media_path TEXT NOT NULL DEFAULT ''"),
 )
 
 

@@ -110,6 +110,7 @@
     "newSpeaker": "＋ New speaker ({{code}})",
     "playFailed": "No audio recorded for this line.",
     "noRecording": "The recording for this meeting is no longer on disk, so nothing here can be played back.",
+    "videoLabel": "Video of this meeting",
     "reprocess": "Reprocess",
     "reprocessing": "Reprocessing…",
     "reprocessHint": "Re-derives this transcript from the recording with the largest model. Every line is replaced, so corrections made by hand here are lost.",
