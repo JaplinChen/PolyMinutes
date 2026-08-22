@@ -109,6 +109,21 @@
   font-weight: 600;
 }
 
+/* Inline jump to the cited transcript line — quiet until hovered, so the text stays the focus. */
+.sess-page .sess-summary-jump {
+  margin-inline-start: var(--space-1);
+  padding: 0 2px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  vertical-align: baseline;
+}
+
+.sess-page .sess-summary-jump:hover {
+  color: var(--accent);
+}
+
 /* Muted, not red: the summary still stands, it is just older than the transcript under it. */
 .sess-page .sess-summary-stale {
   margin: var(--space-2) 0 0;

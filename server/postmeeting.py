@@ -239,7 +239,7 @@ def _summarize_stage(store: Store, session_id: int, languages: list[str],
     if not rows:
         return
 
-    lines = [summarize.SummaryLine(r["speaker"], r["lang"], r["source"]) for r in rows]
+    lines = [summarize.SummaryLine(r["speaker"], r["lang"], r["source"], id=r["id"]) for r in rows]
     target = summarize.target_chars(sum(len(l.text) for l in lines))
     # Room for the transcript excerpt (INPUT_BUDGET chars) plus a long detailed reply; the default
     # 8192 leaves no output budget and Ollama answers with a single terse line. num_predict caps

@@ -40,6 +40,16 @@ class SummaryLine:
     speaker: str
     lang: str
     text: str
+    id: int = 0  # transcript line id, so a summary item can cite the line it came from
+
+
+def item_text(x) -> str:
+    """A summary item's text, whether it is a new {text, line} dict or an old bare string.
+
+    Summaries stored before citations were added hold plain strings; readers (export, the ask
+    index) must keep working against both shapes without a migration.
+    """
+    return x.get("text", "") if isinstance(x, dict) else str(x)
 
 
 def target_chars(total_chars: int) -> int:
@@ -130,28 +140,31 @@ def build_prompt(lines: list[SummaryLine], lang: str, rules: str,
     if sampled:
         parts += ["", "The transcript below is an evenly-sampled excerpt of a longer meeting."]
 
-    parts += ["", "Transcript:"]
-    parts += [f"{l.speaker}({l.lang}): {l.text}" for l in lines]
+    parts += ["", "Transcript (each line is tagged [line_id]):"]
+    parts += [f"[{l.id}] {l.speaker}({l.lang}): {l.text}" for l in lines]
 
     # A long detailed summary does not survive being wrapped in a JSON string — local models leave
     # the newlines and 「」 quotes inside it unescaped and the JSON no longer parses. Labelled
     # sections carry multi-line prose verbatim, and this side reassembles the object.
     parts += [
         "",
-        "Reply in exactly these four labelled sections, nothing before or after:",
+        "Reply in exactly these six labelled sections, nothing before or after:",
         "TITLE: <one sentence>",
         "SUMMARY:",
         "<the summary; may span many lines>",
         "DECISIONS:",
-        "- <one decision per line, or leave this section empty>",
+        "- <one decision per line, or leave this section empty> || <line_id it came from>",
         "ACTIONS:",
-        "- <what to do> || <speaker code, or blank>",
+        "- <what to do> || <speaker code, or blank> || <line_id it came from>",
         "RISKS:",
-        "- <one risk or thing still to confirm per line, or leave this section empty>",
+        "- <one risk or thing still to confirm> || <line_id it came from>",
         "OPEN_QUESTIONS:",
-        "- <one unaligned issue, unsupported assumption or inference per line, or leave empty>",
+        "- <one unaligned issue, unsupported assumption or inference> || <line_id it came from>",
         "",
         "Use the speaker codes exactly as they appear in the transcript; leave blank when unclear.",
+        "End every DECISIONS/ACTIONS/RISKS/OPEN_QUESTIONS item with the [line_id] of the transcript",
+        "line it is drawn from, so a reader can jump to it. Leave the line_id blank only when no single",
+        "line applies.",
         "Every section except TITLE and SUMMARY may be empty — do not invent items to fill them.",
         "Put anything you are inferring rather than that was said outright in OPEN_QUESTIONS,",
         "never in SUMMARY as if it were fact.",
@@ -174,7 +187,39 @@ def _bullets(block: str) -> list[str]:
     return out
 
 
-def parse_response(raw: str, valid_speakers: frozenset[str] = frozenset()) -> dict:
+def _cite(raw_id: str, valid_lines: frozenset[int]) -> int | None:
+    """The line_id a model appended, verified against the transcript's real ids.
+
+    A number that names no line is the model inventing a citation — the same failure the ask path
+    drops. Here the item's text is still worth keeping, so an unverifiable id becomes None (the page
+    shows the item without a jump) rather than dropping the whole item. With no set supplied — a test
+    calling parse_response directly — a well-formed number is trusted as-is.
+    """
+    raw_id = raw_id.strip().lstrip("[#").rstrip("]")
+    if not raw_id.lstrip("-").isdigit():
+        return None
+    line_id = int(raw_id)
+    if valid_lines and line_id not in valid_lines:
+        return None
+    return line_id
+
+
+def _cited_bullets(block: str, valid_lines: frozenset[int]) -> list[dict]:
+    """Bullets of `<text> || <line_id>`; the trailing citation is split off and verified."""
+    out = []
+    for item in _bullets(block):
+        text, sep, tail = item.rpartition("||")
+        if not sep:  # no citation appended
+            text, tail = item, ""
+        text = text.strip()
+        if not text:
+            continue
+        out.append({"text": text, "line": _cite(tail, valid_lines)})
+    return out
+
+
+def parse_response(raw: str, valid_speakers: frozenset[str] = frozenset(),
+                   valid_lines: frozenset[int] = frozenset()) -> dict:
     """Split the labelled sections; a missing title or summary raises so the retry loop can say so."""
     sections: dict[str, list[str]] = {}
     current: str | None = None
@@ -193,12 +238,17 @@ def parse_response(raw: str, valid_speakers: frozenset[str] = frozenset()) -> di
     if not summary:
         raise ValueError(f"missing SUMMARY section: {raw[:200]!r}")
 
-    decisions = _bullets("\n".join(sections.get("DECISIONS", [])))
+    decisions = _cited_bullets("\n".join(sections.get("DECISIONS", [])), valid_lines)
 
     clean_actions = []
     for item in _bullets("\n".join(sections.get("ACTIONS", []))):
-        text, _, speaker = item.partition("||")
-        text, speaker = text.strip(), speaker.strip()
+        # <text> || <speaker> || <line_id>. Split on the count, not the last separator: a two-field
+        # "text || speaker" (the pre-citation format, still emitted when the model omits the id) must
+        # not have its speaker mistaken for a line_id.
+        parts = [p.strip() for p in item.split("||")]
+        text = parts[0]
+        speaker = parts[1] if len(parts) >= 2 else ""
+        line = _cite(parts[2], valid_lines) if len(parts) >= 3 else None
         if not text:
             continue
         # A speaker code the transcript never contained is the model inventing an owner — the same
@@ -207,10 +257,10 @@ def parse_response(raw: str, valid_speakers: frozenset[str] = frozenset()) -> di
         # item. When no set is supplied — a test calling parse_response directly — nothing is dropped.
         if valid_speakers and speaker and speaker not in valid_speakers:
             speaker = ""
-        clean_actions.append({"text": text, "speaker": speaker})
+        clean_actions.append({"text": text, "speaker": speaker, "line": line})
 
-    risks = _bullets("\n".join(sections.get("RISKS", [])))
-    open_questions = _bullets("\n".join(sections.get("OPEN_QUESTIONS", [])))
+    risks = _cited_bullets("\n".join(sections.get("RISKS", [])), valid_lines)
+    open_questions = _cited_bullets("\n".join(sections.get("OPEN_QUESTIONS", [])), valid_lines)
 
     return {"title": title, "summary": summary,
             "decisions": decisions, "actions": clean_actions,
@@ -245,6 +295,9 @@ def summarize(lines: list[SummaryLine], languages: list[str], chat: Callable[[st
     # The codes the transcript actually uses. The model is told to use these exactly; this is what
     # holds it to that when it does not.
     valid = frozenset(l.speaker for l in lines if l.speaker)
+    # Only the ids the model was shown can be cited; a long meeting is sampled, so an id outside the
+    # excerpt is as invented as one that never existed.
+    valid_lines = frozenset(l.id for l in sampled_lines if l.id)
 
     out: dict[str, dict] = {}
     for lang in languages:
@@ -254,10 +307,10 @@ def summarize(lines: list[SummaryLine], languages: list[str], chat: Callable[[st
                               reference=reference)
         raw = chat(prompt)
         try:
-            out[lang] = parse_response(raw, valid)
+            out[lang] = parse_response(raw, valid, valid_lines)
         except ValueError as first:
             try:
-                out[lang] = parse_response(chat(retry_prompt(prompt, raw, str(first))), valid)
+                out[lang] = parse_response(chat(retry_prompt(prompt, raw, str(first))), valid, valid_lines)
             except ValueError:
                 pass  # recorded as missing; status below says partial/failed
 

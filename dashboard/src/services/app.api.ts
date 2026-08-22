@@ -120,15 +120,19 @@ export interface SessionSummary {
 /** Where the meeting summary got to. `partial` means some requested languages failed. */
 export type SummaryState = 'none' | 'generating' | 'ok' | 'partial' | 'failed' | 'no_llm';
 
+/** A summary item and the transcript line it cites. `line` is null when unverifiable or when the
+ *  summary predates citations (older rows stored bare strings — readers tolerate both shapes). */
+export interface CitedItem { text: string; line: number | null }
+
 export interface MeetingSummaryLang {
   title: string;
   summary: string;
-  decisions: string[];
+  decisions: (string | CitedItem)[];
   /** `speaker` is the diarisation code, not a display name — resolve via the names map. */
-  actions: { text: string; speaker: string }[];
+  actions: { text: string; speaker: string; line?: number | null }[];
   /** Optional: summaries generated before the judgment layer was added omit these. */
-  risks?: string[];
-  open_questions?: string[];
+  risks?: (string | CitedItem)[];
+  open_questions?: (string | CitedItem)[];
 }
 
 export interface MeetingSummary {

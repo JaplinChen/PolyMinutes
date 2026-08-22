@@ -8,7 +8,7 @@ import { TranscriptRow } from '../components/sessions/TranscriptRow';
 import { VideoPopup } from '../components/sessions/VideoPopup';
 import { useToast } from '../components/Toast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
-import { appApi, type MeetingSummary, type RefineJob, type RefineStage, type RefineState, type SessionSummary, type SpeakerSuggestion, type TranscriptLine } from '../services/app.api';
+import { appApi, type CitedItem, type MeetingSummary, type RefineJob, type RefineStage, type RefineState, type SessionSummary, type SpeakerSuggestion, type TranscriptLine } from '../services/app.api';
 import { API_BASE_URL, NO_SUCH_ENDPOINT } from '../services/http';
 import { editingLocked } from '../services/sessionSummary';
 import './Sessions.css';
@@ -25,6 +25,10 @@ function suggestCandidates(s: SpeakerSuggestion): { name: string; similarity: nu
   const head = { name: s.name, similarity: s.similarity };
   return s.basis === 'unsure' && s.alternative ? [head, s.alternative] : [head];
 }
+
+// Summary items were bare strings before citations were added, then {text, line} dicts. Read both.
+const itemText = (x: string | CitedItem): string => (typeof x === 'string' ? x : x.text);
+const itemLine = (x: string | CitedItem): number | null => (typeof x === 'string' ? null : x.line);
 
 // Only ping the OS for a pass that ran long enough that the user has likely walked away — a quick
 // meeting refine that finishes while they glanced at another tab does not deserve a notification.
@@ -145,6 +149,31 @@ export function Sessions() {
   const loadSummary = useCallback((id: number) => {
     appApi.sessionSummary(id).then(setSummary).catch(() => setSummary(null));
   }, []);
+
+  // Follow a summary item's citation to its transcript line: switch tabs and let the scroll effect
+  // (which reruns on `tab`) centre and flash the row — the same path a /ask citation takes.
+  const jumpToLine = useCallback((line: number | null | undefined) => {
+    if (line == null) return;
+    wantedLine.current = line;
+    setTab('transcript');
+  }, []);
+
+  // A summary item with a verified citation gets a jump control to its transcript line; without one
+  // it is plain text (older summaries, or an item the model could not tie to a single line).
+  const renderCited = (text: string, line: number | null) =>
+    line == null ? text : (
+      <>
+        {text}
+        <button
+          type="button"
+          className="sess-summary-jump"
+          title={t('sessions.summaryJump')}
+          onClick={() => jumpToLine(line)}
+        >
+          <LinkIcon size={13} aria-hidden />
+        </button>
+      </>
+    );
 
   // Silent on failure: an older backend without the progress fields still answers, and one without
   // the route at all should degrade to the bare state chip rather than a toast per poll.
@@ -1013,7 +1042,9 @@ export function Sessions() {
                 <>
                   <h4 className="sess-summary-heading">{t('sessions.summaryDecisions')}</h4>
                   <ul className="sess-summary-list">
-                    {sumContent.decisions.map((d, i) => <li key={i}>{d}</li>)}
+                    {sumContent.decisions.map((d, i) => (
+                      <li key={i}>{renderCited(itemText(d), itemLine(d))}</li>
+                    ))}
                   </ul>
                 </>
               )}
@@ -1026,7 +1057,7 @@ export function Sessions() {
                         <span className="sess-summary-actor">
                           {a.speaker ? names[a.speaker] || a.speaker : t('sessions.summaryUnassigned')}
                         </span>
-                        {a.text}
+                        {renderCited(a.text, a.line ?? null)}
                       </li>
                     ))}
                   </ul>
@@ -1036,7 +1067,9 @@ export function Sessions() {
                 <>
                   <h4 className="sess-summary-heading">{t('sessions.summaryRisks')}</h4>
                   <ul className="sess-summary-list">
-                    {sumContent.risks!.map((r, i) => <li key={i}>{r}</li>)}
+                    {sumContent.risks!.map((r, i) => (
+                      <li key={i}>{renderCited(itemText(r), itemLine(r))}</li>
+                    ))}
                   </ul>
                 </>
               )}
@@ -1044,7 +1077,9 @@ export function Sessions() {
                 <>
                   <h4 className="sess-summary-heading">{t('sessions.summaryOpenQuestions')}</h4>
                   <ul className="sess-summary-list">
-                    {sumContent.open_questions!.map((q, i) => <li key={i}>{q}</li>)}
+                    {sumContent.open_questions!.map((q, i) => (
+                      <li key={i}>{renderCited(itemText(q), itemLine(q))}</li>
+                    ))}
                   </ul>
                 </>
               )}
