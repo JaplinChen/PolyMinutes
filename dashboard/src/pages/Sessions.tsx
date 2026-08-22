@@ -1032,6 +1032,22 @@ export function Sessions() {
                   </ul>
                 </>
               )}
+              {(sumContent.risks?.length ?? 0) > 0 && (
+                <>
+                  <h4 className="sess-summary-heading">{t('sessions.summaryRisks')}</h4>
+                  <ul className="sess-summary-list">
+                    {sumContent.risks!.map((r, i) => <li key={i}>{r}</li>)}
+                  </ul>
+                </>
+              )}
+              {(sumContent.open_questions?.length ?? 0) > 0 && (
+                <>
+                  <h4 className="sess-summary-heading">{t('sessions.summaryOpenQuestions')}</h4>
+                  <ul className="sess-summary-list">
+                    {sumContent.open_questions!.map((q, i) => <li key={i}>{q}</li>)}
+                  </ul>
+                </>
+              )}
               {summary?.stale && <p className="sess-summary-stale">{t('sessions.summaryStale')}</p>}
               {summary?.state === 'failed' && <p className="sess-summary-error">{t('sessions.summaryFailed')}</p>}
               <button

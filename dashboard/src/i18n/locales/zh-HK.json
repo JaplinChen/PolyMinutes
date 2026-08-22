@@ -158,6 +158,8 @@
     "summaryDecisions": "決議",
     "summaryActions": "行動項目",
     "summaryUnassigned": "未指派",
+    "summaryRisks": "風險與待確認",
+    "summaryOpenQuestions": "未決議題與推測",
     "summaryExpand": "展開摘要",
     "summaryCollapse": "收合摘要",
     "summaryStaleShort": "已過期",

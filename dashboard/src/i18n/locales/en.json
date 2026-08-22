@@ -158,6 +158,8 @@
     "summaryDecisions": "Decisions",
     "summaryActions": "Action items",
     "summaryUnassigned": "Unassigned",
+    "summaryRisks": "Risks & to confirm",
+    "summaryOpenQuestions": "Open questions & assumptions",
     "summaryExpand": "Expand summary",
     "summaryCollapse": "Collapse summary",
     "summaryStaleShort": "Outdated",
