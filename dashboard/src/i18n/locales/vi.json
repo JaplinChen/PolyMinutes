@@ -158,6 +158,8 @@
     "summaryDecisions": "Quyết định",
     "summaryActions": "Việc cần làm",
     "summaryUnassigned": "Chưa giao",
+    "summaryRisks": "Rủi ro & cần xác nhận",
+    "summaryOpenQuestions": "Vấn đề chưa chốt & giả định",
     "summaryExpand": "Mở rộng tóm tắt",
     "summaryCollapse": "Thu gọn tóm tắt",
     "summaryStaleShort": "Đã cũ",

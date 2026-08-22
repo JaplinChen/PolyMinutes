@@ -126,6 +126,9 @@ export interface MeetingSummaryLang {
   decisions: string[];
   /** `speaker` is the diarisation code, not a display name — resolve via the names map. */
   actions: { text: string; speaker: string }[];
+  /** Optional: summaries generated before the judgment layer was added omit these. */
+  risks?: string[];
+  open_questions?: string[];
 }
 
 export interface MeetingSummary {

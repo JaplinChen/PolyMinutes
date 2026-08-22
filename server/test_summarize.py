@@ -126,17 +126,28 @@ def test_sample_keeps_a_quiet_speaker_against_a_talkative_one():
     assert "S1" in {l.speaker for l in out}
 
 
-def _valid(title="T", summary="S", decisions=None, actions=None) -> str:
+def _valid(title="T", summary="S", decisions=None, actions=None, risks=None, open_questions=None) -> str:
     parts = [f"TITLE: {title}", "SUMMARY:", summary, "DECISIONS:"]
     parts += [f"- {d}" for d in (decisions or [])]
     parts += ["ACTIONS:"]
     parts += [f"- {text} || {speaker}" for text, speaker in (actions or [])]
+    parts += ["RISKS:"]
+    parts += [f"- {r}" for r in (risks or [])]
+    parts += ["OPEN_QUESTIONS:"]
+    parts += [f"- {q}" for q in (open_questions or [])]
     return "\n".join(parts)
 
 
 def test_parse_response_accepts_valid_with_empty_sections():
     got = S.parse_response("noise before\n" + _valid())
-    assert got == {"title": "T", "summary": "S", "decisions": [], "actions": []}
+    assert got == {"title": "T", "summary": "S", "decisions": [], "actions": [],
+                   "risks": [], "open_questions": []}
+
+
+def test_parse_response_parses_risks_and_open_questions():
+    got = S.parse_response(_valid(risks=["交期可能延誤"], open_questions=["預算尚未確認（推測）"]))
+    assert got["risks"] == ["交期可能延誤"]
+    assert got["open_questions"] == ["預算尚未確認（推測）"]
 
 
 def test_parse_response_keeps_multiline_summary():
@@ -201,7 +212,7 @@ def test_retry_prompt_carries_error_and_truncates_bad_reply():
 
 
 def test_max_tokens_for():
-    assert S.max_tokens_for(1000) == 2500
+    assert S.max_tokens_for(1000) == 2800
 
 
 def _chat_by_lang(replies: dict[str, list[str]]) -> Callable[[str], str]:

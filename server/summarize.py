@@ -146,14 +146,21 @@ def build_prompt(lines: list[SummaryLine], lang: str, rules: str,
         "- <one decision per line, or leave this section empty>",
         "ACTIONS:",
         "- <what to do> || <speaker code, or blank>",
+        "RISKS:",
+        "- <one risk or thing still to confirm per line, or leave this section empty>",
+        "OPEN_QUESTIONS:",
+        "- <one unaligned issue, unsupported assumption or inference per line, or leave empty>",
         "",
         "Use the speaker codes exactly as they appear in the transcript; leave blank when unclear.",
-        "DECISIONS and ACTIONS may be empty — do not invent items to fill them.",
+        "Every section except TITLE and SUMMARY may be empty — do not invent items to fill them.",
+        "Put anything you are inferring rather than that was said outright in OPEN_QUESTIONS,",
+        "never in SUMMARY as if it were fact.",
     ]
     return "\n".join(parts)
 
 
-_SECTION = re.compile(r"^\s*(TITLE|SUMMARY|DECISIONS|ACTIONS)\s*:\s*(.*)$", re.IGNORECASE)
+_SECTION = re.compile(
+    r"^\s*(TITLE|SUMMARY|DECISIONS|ACTIONS|RISKS|OPEN_QUESTIONS)\s*:\s*(.*)$", re.IGNORECASE)
 
 
 def _bullets(block: str) -> list[str]:
@@ -202,8 +209,12 @@ def parse_response(raw: str, valid_speakers: frozenset[str] = frozenset()) -> di
             speaker = ""
         clean_actions.append({"text": text, "speaker": speaker})
 
+    risks = _bullets("\n".join(sections.get("RISKS", [])))
+    open_questions = _bullets("\n".join(sections.get("OPEN_QUESTIONS", [])))
+
     return {"title": title, "summary": summary,
-            "decisions": decisions, "actions": clean_actions}
+            "decisions": decisions, "actions": clean_actions,
+            "risks": risks, "open_questions": open_questions}
 
 
 def retry_prompt(original: str, bad_reply: str, error: str) -> str:
@@ -218,8 +229,9 @@ def retry_prompt(original: str, bad_reply: str, error: str) -> str:
 
 
 def max_tokens_for(target: int) -> int:
-    # Double the character target covers CJK tokenization plus title/decisions/actions overhead.
-    return target * 2 + 500
+    # Double the character target covers CJK tokenization plus the labelled-section overhead
+    # (title, decisions, actions, risks, open_questions).
+    return target * 2 + 800
 
 
 def summarize(lines: list[SummaryLine], languages: list[str], chat: Callable[[str], str],
