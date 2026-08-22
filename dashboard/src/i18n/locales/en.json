@@ -129,6 +129,8 @@
     "exportHint": "Download this transcript as Markdown — speaker names, timestamps and every translation as they stand now.",
     "exportDocx": "Word",
     "exportDocxHint": "Download this transcript as a Word document — summary, speakers and transcript, ready to hand over.",
+    "exportVtt": "Subtitles",
+    "exportVttHint": "Download the spoken transcript as a WebVTT subtitle track — drop it onto the meeting video in any player.",
     "pick": "Which meeting",
     "refineFailedReason": "The post-meeting pass failed: {{reason}}",
     "summaryTitle": "Meeting summary",

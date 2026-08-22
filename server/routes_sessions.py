@@ -587,6 +587,15 @@ def session_markdown(session_id: int) -> PlainTextResponse:
                              media_type="text/markdown")
 
 
+@router.get("/api/sessions/{session_id}/vtt")
+def session_vtt(session_id: int, lang: str | None = None) -> PlainTextResponse:
+    """Subtitles for any player. `lang` picks a translation track; omitted means the spoken text."""
+    if not main.store.session(session_id):
+        raise HTTPException(404, "no such session")
+    return PlainTextResponse(main.postprocess.to_vtt(main.store, session_id, lang),
+                             media_type="text/vtt")
+
+
 @router.get("/api/sessions/{session_id}/docx")
 def session_docx(session_id: int) -> Response:
     """The same export as markdown, as a Word document — what an enterprise meeting hands over."""

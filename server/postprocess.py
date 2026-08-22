@@ -814,3 +814,48 @@ def _docx_bytes(doc) -> bytes:
     buf = io.BytesIO()
     doc.save(buf)
     return buf.getvalue()
+
+
+def _vtt_escape(text: str) -> str:
+    """Cue text is markup: an unescaped `<` starts a tag and swallows the rest of the line."""
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _vtt_time(seconds: float) -> str:
+    """HH:MM:SS.mmm. Rounded in milliseconds, not in seconds-plus-fraction: rounding the fraction
+    of 3.9996 on its own carries to 1000 and writes `.1000`, which no player will parse."""
+    ms = max(int(round(seconds * 1000)), 0)
+    return f"{ms // 3600000:02d}:{ms // 60000 % 60:02d}:{ms // 1000 % 60:02d}.{ms % 1000:03d}"
+
+
+def to_vtt(store: Store, session_id: int, lang: str | None = None) -> str:
+    """The transcript as subtitles, one track per language.
+
+    A meeting already plays back beside its video (#170); WebVTT is what makes that transcript
+    usable in any other player too. One language per file rather than every language stacked in one
+    cue, because a player shows a cue verbatim and three stacked languages cover the picture — as
+    separate tracks the viewer picks one. `lang=None` is the spoken source.
+    """
+    lines = store.lines(session_id)
+    names = store.speaker_names(session_id)
+
+    cues: list[tuple[float, float, str, str]] = []
+    for line in lines:
+        text = line["source"] if lang is None else line["translations"].get(lang, "")
+        if not (text or "").strip():
+            continue
+        start = float(line["start"])
+        # end_time predates most of the corpus and is still nullable; the same two-second fallback
+        # the clip queries use keeps an old meeting from emitting zero-length cues players discard.
+        end = float(line["end_time"]) if line["end_time"] is not None else start + 2.0
+        cues.append((start, end, names.get(line["speaker"], line["speaker"]), text.strip()))
+
+    out = ["WEBVTT", ""]
+    for i, (start, end, who, text) in enumerate(cues):
+        # A cue overlapping the next one makes players show both or jump; the recogniser's end
+        # times routinely run past the next speaker's start when two people talk over each other.
+        limit = cues[i + 1][0] if i + 1 < len(cues) else end
+        end = max(min(end, limit), start + 0.1)
+        out += [f"{_vtt_time(start)} --> {_vtt_time(end)}",
+                f"<v {_vtt_escape(who)}>{_vtt_escape(text)}", ""]
+    return "\n".join(out) + "\n"
