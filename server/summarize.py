@@ -204,17 +204,44 @@ def _cite(raw_id: str, valid_lines: frozenset[int]) -> int | None:
     return line_id
 
 
+# The transcript-style [id] models emit inline instead of the asked-for "|| id" — sometimes wrapped
+# in （）, sometimes a range [a]-[b] — at the very end of an item. qwen/gemma reach for this bracket
+# form (it matches how the transcript itself is tagged) far more reliably than the "||" convention,
+# so the parser accepts both and takes the first id of a range.
+_TRAIL_CITE = re.compile(r"[\s(（]*\[(\d+)\](?:\s*[-–~]\s*\[?\d+\]?)?[)）\s。，,.、]*$")
+
+
+def _pull_citation(item: str, valid_lines: frozenset[int]) -> tuple[str, int | None]:
+    """Split an item into (text, verified line_id), accepting `... || 12` or a trailing `[12]`."""
+    head, sep, tail = item.rpartition("||")
+    if sep:
+        line = _cite(tail, valid_lines)
+        if line is not None:
+            return head.strip(), line
+    m = _TRAIL_CITE.search(item)
+    if m:
+        line = _cite(m.group(1), valid_lines)
+        if line is not None:
+            return item[:m.start()].rstrip(), line
+    return item.strip(), None
+
+
 def _cited_bullets(block: str, valid_lines: frozenset[int]) -> list[dict]:
-    """Bullets of `<text> || <line_id>`; the trailing citation is split off and verified."""
+    """Bullets of `<text>` with an optional trailing citation (`|| id` or `[id]`), split and verified.
+
+    Here a trailing `||` is always the citation slot (these sections have no speaker field), so it is
+    split off even when the id does not verify — the text stays, the line becomes None.
+    """
     out = []
     for item in _bullets(block):
-        text, sep, tail = item.rpartition("||")
-        if not sep:  # no citation appended
-            text, tail = item, ""
-        text = text.strip()
+        head, sep, tail = item.rpartition("||")
+        if sep:
+            text, line = head.strip(), _cite(tail, valid_lines)
+        else:
+            text, line = _pull_citation(item, valid_lines)  # no ||, so only the [id] fallback runs
         if not text:
             continue
-        out.append({"text": text, "line": _cite(tail, valid_lines)})
+        out.append({"text": text, "line": line})
     return out
 
 
@@ -242,13 +269,12 @@ def parse_response(raw: str, valid_speakers: frozenset[str] = frozenset(),
 
     clean_actions = []
     for item in _bullets("\n".join(sections.get("ACTIONS", []))):
-        # <text> || <speaker> || <line_id>. Split on the count, not the last separator: a two-field
-        # "text || speaker" (the pre-citation format, still emitted when the model omits the id) must
-        # not have its speaker mistaken for a line_id.
-        parts = [p.strip() for p in item.split("||")]
-        text = parts[0]
-        speaker = parts[1] if len(parts) >= 2 else ""
-        line = _cite(parts[2], valid_lines) if len(parts) >= 3 else None
+        # Pull the citation off the end first (`|| id` or a trailing `[id]`), then split the rest into
+        # <text> || <speaker>. Two fields without a citation stay text||speaker — the speaker is never
+        # mistaken for a line_id because the citation was already removed.
+        body, line = _pull_citation(item, valid_lines)
+        text, _, speaker = body.partition("||")
+        text, speaker = text.strip(), speaker.strip()
         if not text:
             continue
         # A speaker code the transcript never contained is the model inventing an owner — the same

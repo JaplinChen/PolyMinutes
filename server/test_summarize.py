@@ -165,6 +165,22 @@ def test_parse_response_extracts_and_verifies_line_citations():
     assert got["risks"] == [{"text": "可能延誤", "line": None}]  # invented id cleared, text kept
 
 
+def test_parse_response_accepts_inline_bracket_citations():
+    # Models routinely ignore "|| id" and cite inline as the transcript-style [id] — bare, in （）,
+    # or as a range. All should be pulled off the end and the text left clean.
+    raw = "\n".join([
+        "TITLE: T", "SUMMARY:", "S",
+        "DECISIONS:", "- 冷氣安裝計劃在Q4完成。（[17460]）",
+        "ACTIONS:", "- 評估內部講師人選 [17415]",
+        "RISKS:", "- 新人可能產生不良品 [17398]-[17399]",  # range → first id
+        "OPEN_QUESTIONS:",
+    ])
+    got = S.parse_response(raw, valid_lines=frozenset({17460, 17415, 17398}))
+    assert got["decisions"] == [{"text": "冷氣安裝計劃在Q4完成。", "line": 17460}]
+    assert got["actions"] == [{"text": "評估內部講師人選", "speaker": "", "line": 17415}]
+    assert got["risks"] == [{"text": "新人可能產生不良品", "line": 17398}]
+
+
 def test_parse_response_keeps_multiline_summary():
     raw = _valid(summary="【背景】第一段\n【討論】第二段「原話」")
     assert S.parse_response(raw)["summary"] == "【背景】第一段\n【討論】第二段「原話」"
