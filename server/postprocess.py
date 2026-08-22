@@ -20,7 +20,7 @@ from typing import Callable
 import numpy as np
 import soundfile as sf
 
-from . import asr, asr_gpu, config, correct, diarize, jobs, translate
+from . import asr, asr_gpu, config, correct, diarize, jobs, summarize, translate
 from .store import Store
 
 log = logging.getLogger("polyminutes.postprocess")
@@ -704,7 +704,7 @@ def _summary_markdown(store: Store, session_id: int, names: dict[str, str]) -> l
     for lang, s in per_language.items():
         out += [f"### {s.get('title') or lang}（{lang}）", "", s.get("summary", ""), ""]
         if s.get("decisions"):
-            out += ["**決議**", ""] + [f"- {d}" for d in s["decisions"]] + [""]
+            out += ["**決議**", ""] + [f"- {summarize.item_text(d)}" for d in s["decisions"]] + [""]
         if s.get("actions"):
             out += ["**行動項目**", ""]
             out += [f"- {names.get(a.get('speaker', ''), a.get('speaker')) or '（未指定）'}："
@@ -782,7 +782,7 @@ def to_docx(store: Store, session_id: int) -> bytes:
             if s.get("decisions"):
                 doc.add_paragraph("決議").bold = True
                 for d in s["decisions"]:
-                    doc.add_paragraph(str(d), style="List Bullet")
+                    doc.add_paragraph(summarize.item_text(d), style="List Bullet")
             if s.get("actions"):
                 doc.add_paragraph("行動項目").bold = True
                 for a in s["actions"]:

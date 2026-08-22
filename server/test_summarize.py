@@ -54,7 +54,7 @@ def test_build_prompt_asks_for_one_language_with_rules_and_excerpt_note():
     assert "Chinese" not in prompt and "English" not in prompt
     assert "- my rule" in prompt
     assert "excerpt" in prompt
-    assert "S1(zh): hello" in prompt
+    assert "[0] S1(zh): hello" in prompt
     assert "excerpt" not in S.build_prompt(lines, "vi", "- my rule", sampled=False)
 
 
@@ -64,7 +64,7 @@ def test_build_prompt_injects_reference_as_background_before_the_transcript():
     assert "廖仁成" in prompt and "Q3 采购计划" in prompt
     assert "context only, not spoken" in prompt
     # Reference sits ahead of the transcript so the model reads the meeting's own terms first.
-    assert prompt.index("廖仁成") < prompt.index("S1(zh): hello")
+    assert prompt.index("廖仁成") < prompt.index("[0] S1(zh): hello")
     # No reference given → no background block at all.
     assert "Background notes" not in S.build_prompt(lines, "en", "-")
 
@@ -146,8 +146,23 @@ def test_parse_response_accepts_valid_with_empty_sections():
 
 def test_parse_response_parses_risks_and_open_questions():
     got = S.parse_response(_valid(risks=["交期可能延誤"], open_questions=["預算尚未確認（推測）"]))
-    assert got["risks"] == ["交期可能延誤"]
-    assert got["open_questions"] == ["預算尚未確認（推測）"]
+    assert got["risks"] == [{"text": "交期可能延誤", "line": None}]
+    assert got["open_questions"] == [{"text": "預算尚未確認（推測）", "line": None}]
+
+
+def test_parse_response_extracts_and_verifies_line_citations():
+    raw = "\n".join([
+        "TITLE: T", "SUMMARY:", "S",
+        "DECISIONS:", "- 交期延後 || 12", "- 無出處決議",
+        "ACTIONS:", "- 追蹤供應商 || S1 || 12", "- 沒有行號 || S1",
+        "RISKS:", "- 可能延誤 || 99",  # 99 is not a real line — dropped to None
+        "OPEN_QUESTIONS:",
+    ])
+    got = S.parse_response(raw, valid_speakers=frozenset({"S1"}), valid_lines=frozenset({12}))
+    assert got["decisions"] == [{"text": "交期延後", "line": 12}, {"text": "無出處決議", "line": None}]
+    assert got["actions"] == [{"text": "追蹤供應商", "speaker": "S1", "line": 12},
+                              {"text": "沒有行號", "speaker": "S1", "line": None}]
+    assert got["risks"] == [{"text": "可能延誤", "line": None}]  # invented id cleared, text kept
 
 
 def test_parse_response_keeps_multiline_summary():
@@ -173,7 +188,7 @@ def test_parse_response_rejects_missing_summary():
 
 def test_parse_response_parses_decisions_as_bullets():
     got = S.parse_response(_valid(decisions=["first", "second"]))
-    assert got["decisions"] == ["first", "second"]
+    assert got["decisions"] == [{"text": "first", "line": None}, {"text": "second", "line": None}]
 
 
 def test_parse_response_clears_a_speaker_the_transcript_never_had():
@@ -181,14 +196,14 @@ def test_parse_response_clears_a_speaker_the_transcript_never_had():
     # false attribution is cleared to "" so the page shows it unassigned.
     raw = _valid(actions=[("send the report", "S9"), ("book the room", "S1")])
     got = S.parse_response(raw, valid_speakers=frozenset({"S1", "S2"}))
-    assert got["actions"] == [{"text": "send the report", "speaker": ""},
-                              {"text": "book the room", "speaker": "S1"}]
+    assert got["actions"] == [{"text": "send the report", "speaker": "", "line": None},
+                              {"text": "book the room", "speaker": "S1", "line": None}]
 
 
 def test_parse_response_keeps_all_speakers_when_no_set_is_given():
     # Called without a set (a test, or a caller that does not have one), nothing is second-guessed.
     raw = _valid(actions=[("x", "S9")])
-    assert S.parse_response(raw)["actions"] == [{"text": "x", "speaker": "S9"}]
+    assert S.parse_response(raw)["actions"] == [{"text": "x", "speaker": "S9", "line": None}]
 
 
 def test_summarize_clears_invented_owners_end_to_end():
@@ -199,8 +214,8 @@ def test_summarize_clears_invented_owners_end_to_end():
                    actions=[("交報告", "S7"), ("訂會議室", "S2")])
     out, status = S.summarize(lines, ["zh"], lambda _p: reply)
     assert status == "ok"
-    assert out["zh"]["actions"] == [{"text": "交報告", "speaker": ""},
-                                    {"text": "訂會議室", "speaker": "S2"}]
+    assert out["zh"]["actions"] == [{"text": "交報告", "speaker": "", "line": None},
+                                    {"text": "訂會議室", "speaker": "S2", "line": None}]
 
 
 def test_retry_prompt_carries_error_and_truncates_bad_reply():

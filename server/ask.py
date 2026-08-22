@@ -154,7 +154,7 @@ def index_prompt(question: str, index: list[dict]) -> str:
              "Pick the meetings whose transcript could answer the question. Pick none rather",
              "than guessing.", "", f"Question: {question}", "", "Meetings:"]
     for row in index:
-        decisions = "; ".join(row.get("decisions") or [])
+        decisions = "; ".join(summarize.item_text(d) for d in (row.get("decisions") or []))
         parts.append(f"[{row['id']}] {row.get('started', '')} {row.get('title', '')}"
                      + (f" — {decisions}" if decisions else ""))
     parts += [
