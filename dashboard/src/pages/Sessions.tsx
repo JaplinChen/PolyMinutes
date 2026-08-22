@@ -5,6 +5,7 @@ import { Captions, Download, FileText, Link as LinkIcon, RefreshCw, Search, Tras
 import { PageHeader } from '../components/PageHeader';
 import { PageSkeleton } from '../components/PageSkeleton';
 import { TranscriptRow } from '../components/sessions/TranscriptRow';
+import { VideoPopup } from '../components/sessions/VideoPopup';
 import { useToast } from '../components/Toast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { appApi, type MeetingSummary, type RefineJob, type RefineStage, type RefineState, type SessionSummary, type SpeakerSuggestion, type TranscriptLine } from '../services/app.api';
@@ -911,15 +912,9 @@ export function Sessions() {
           )}
           {!hasRecording && <p className="sess-no-audio">{t('sessions.noRecording')}</p>}
           {hasVideo && (
-            // Sticky, so the picture stays put while the transcript scrolls past it — a line
-            // clicked at the bottom of a two-hour meeting is no use if its video is off screen.
-            <video
-              ref={video}
-              className="sess-video"
-              controls
-              preload="metadata"
-              aria-label={t('sessions.videoLabel')}
+            <VideoPopup
               src={`${API_BASE_URL}/sessions/${selected}/video`}
+              videoRef={video}
               onPause={() => { playingRef.current = null; setPlaying(null); }}
               onTimeUpdate={() => {
                 const el = video.current;

@@ -1,0 +1,79 @@
+/* A floating window, so the picture and the transcript stop competing for one column. Fixed rather
+   than absolute: it follows the viewport, not the scroll, which is the whole point of watching a
+   line at 1:43:00 without losing the row it belongs to. */
+.vpop {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 15rem;
+  min-height: 10rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 28%);
+  /* Native resize on the panel itself — the drag corner comes for free, and no second pointer
+     handler has to reimplement what the browser already does. */
+  resize: both;
+}
+
+/* Collapsed, the bar is the whole window: height must follow the bar, and a resize corner on a
+   title bar resizes nothing worth having. */
+.vpop[data-open='false'] {
+  height: auto !important;
+  min-height: 0;
+  resize: none;
+}
+
+.vpop[data-open='false'] .vpop-video {
+  display: none;
+}
+
+.vpop-bar {
+  display: flex;
+  flex: 0 0 auto;
+  gap: var(--space-2);
+  align-items: center;
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-light);
+  color: var(--text-secondary);
+  /* The bar is the handle: grabbing the picture itself would fight the player's own controls. */
+  cursor: move;
+  user-select: none;
+}
+
+.vpop-title {
+  flex: 1;
+  overflow: hidden;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.vpop-toggle {
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.vpop-toggle:hover {
+  color: var(--text-primary);
+}
+
+.vpop-video {
+  flex: 1;
+  /* min-height: 0 or the video's intrinsic height keeps the flex child from ever shrinking, and
+     the window cannot be dragged smaller than the picture it started at. */
+  min-height: 0;
+  width: 100%;
+  background: #000;
+  /* contain, not cover: a screen share cropped to fill loses the slide's edges, which is where the
+     numbers being discussed usually are. */
+  object-fit: contain;
+}
