@@ -115,6 +115,9 @@ class StubPostprocess:
     def to_docx(self, store, session_id):
         return postprocess_mod.to_docx(store, session_id)
 
+    def to_vtt(self, store, session_id, lang=None):
+        return postprocess_mod.to_vtt(store, session_id, lang)
+
 
 class StubTranslator:
     """Echoes a deterministic translation, and revises the previous line on the third call."""

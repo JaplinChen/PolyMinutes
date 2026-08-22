@@ -129,6 +129,8 @@
     "exportHint": "Tải bản ghi này dưới dạng Markdown — tên người nói, mốc thời gian và mọi bản dịch hiện tại.",
     "exportDocx": "Word",
     "exportDocxHint": "Tải bản ghi này dưới dạng tài liệu Word — tóm tắt, người nói và bản ghi, sẵn sàng bàn giao.",
+    "exportVtt": "Phụ đề",
+    "exportVttHint": "Tải bản ghi gốc dưới dạng phụ đề WebVTT — gắn thẳng vào video cuộc họp trên bất kỳ trình phát nào.",
     "pick": "Chọn cuộc họp",
     "refineFailedReason": "Lượt xử lý sau cuộc họp thất bại: {{reason}}",
     "summaryTitle": "Tóm tắt cuộc họp",

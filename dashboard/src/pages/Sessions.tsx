@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
-import { Download, FileText, Link as LinkIcon, RefreshCw, Search, Trash2, Upload, Volume2 } from 'lucide-react';
+import { Captions, Download, FileText, Link as LinkIcon, RefreshCw, Search, Trash2, Upload, Volume2 } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { PageSkeleton } from '../components/PageSkeleton';
 import { TranscriptRow } from '../components/sessions/TranscriptRow';
@@ -845,6 +845,17 @@ export function Sessions() {
             >
               <FileText size={13} />
               {t('sessions.exportDocx')}
+            </a>
+            {/* Source track only: the spoken words are what a video of this meeting needs
+                captioned. Translation tracks exist at ?lang= for anyone who wants one. */}
+            <a
+              className="sess-export"
+              href={`${API_BASE_URL}/sessions/${selected}/vtt`}
+              download={`${t('sessions.title')}-${(current?.started ?? '').slice(0, 10)}.vtt`}
+              title={t('sessions.exportVttHint')}
+            >
+              <Captions size={13} />
+              {t('sessions.exportVtt')}
             </a>
             <button
               type="button"

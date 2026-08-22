@@ -129,6 +129,8 @@
     "exportHint": "把這份逐字稿下載成 Markdown——目前的發言者名稱、時間戳與所有譯文。",
     "exportDocx": "Word",
     "exportDocxHint": "把這份逐字稿下載成 Word 文件——摘要、發言者與逐字稿，可直接交付。",
+    "exportVtt": "字幕",
+    "exportVttHint": "把原音逐字稿下載成 WebVTT 字幕軌——可直接掛到任何播放器的會議影片上。",
     "pick": "選擇會議",
     "refineFailedReason": "精修失敗：{{reason}}",
     "summaryTitle": "會議摘要",

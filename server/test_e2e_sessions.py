@@ -904,6 +904,49 @@ def test_a_session_exports_as_markdown(client: TestClient) -> None:
     assert client.get("/api/sessions/999999/markdown").status_code == 404
 
 
+def test_a_session_exports_as_subtitles(client: TestClient) -> None:
+    """A transcript is only subtitles if the cues are well-formed for a player that never saw us."""
+    session = main.store.start_session("now", "")
+    # Overlapping speech: the first line's end runs past the second's start.
+    main.store.add_line(session, 3661.5, "S1", "zh", "切削液要換了",
+                        {"en": "the coolant needs changing"}, end_time=3666.0)
+    main.store.add_line(session, 3664.0, "S2", "zh", "a < b & c", {}, end_time=3665.0)
+    # An old line with no end time at all.
+    main.store.add_line(session, 3700.0, "S1", "zh", "沒有結束時間的一句", {})
+    main.store.set_speaker_name(session, "S1", "王經理")
+
+    r = client.get(f"/api/sessions/{session}/vtt")
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"].startswith("text/vtt"), r.headers["content-type"]
+    body = r.text
+    assert body.startswith("WEBVTT\n"), body[:40]
+
+    # Hours, and milliseconds, both of which a naive mm:ss stamp gets wrong.
+    assert "01:01:01.500 --> " in body, body
+    # Clamped to the next cue's start rather than overlapping it.
+    assert "01:01:01.500 --> 01:01:04.000" in body, body
+    # A named speaker rides in the voice tag; markup in the text is escaped, not emitted.
+    assert "<v 王經理>切削液要換了" in body, body
+    assert "<v S2>a &lt; b &amp; c" in body, body
+    # No end_time still produces a cue with positive duration.
+    assert "01:01:40.000 --> 01:01:42.000" in body, body
+
+    # A translation track carries only the lines that have that translation.
+    en = client.get(f"/api/sessions/{session}/vtt", params={"lang": "en"}).text
+    assert "the coolant needs changing" in en, en
+    assert "沒有結束時間" not in en, en
+    # Nothing translated into Vietnamese: a valid, empty track beats a 404.
+    assert client.get(f"/api/sessions/{session}/vtt", params={"lang": "vi"}).text.strip() == "WEBVTT"
+
+    assert client.get("/api/sessions/999999/vtt").status_code == 404
+
+    # Rounding happens in milliseconds: carrying a rounded fraction of a second on its own
+    # writes `.1000`, and a player that meets one drops the rest of the file.
+    from .postprocess import _vtt_time
+    assert _vtt_time(3.9996) == "00:00:04.000"
+    assert _vtt_time(3599.9995) == "01:00:00.000"
+
+
 def test_starting_without_models_says_which_file_is_missing(client: TestClient) -> None:
     """The one thing a first run gets wrong, and the app knows exactly what it is.
 
