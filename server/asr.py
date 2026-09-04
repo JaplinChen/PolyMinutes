@@ -94,7 +94,12 @@ _HALLUCINATIONS = re.compile(
     r"|訂閱(我們的)?頻道|點選訂閱|歡迎訂閱|請不吝|點贊|打賞|明鏡|點點欄目"
     # Subtitling credits and sign-offs, all of them from the same training data. Seen on seven
     # real interviews, where they arrive in the silence between speakers.
-    r"|ming pao|amara\.org|字幕(組|小組)|字幕由|本期的?(影片|視頻|節目)|謝謝觀看|感謝觀看"
+    # 字幕志願者 and 整理&字幕<name> are fansub credits — a subtitle volunteer's sign-off, never
+    # meeting speech. Seen on the 2026-08-22 recording as 整理&字幕志願者 楊棟樑 in a silent gap,
+    # scored 0.97; the & is the credit's signature, so 整理 needs it to match and a meeting saying
+    # 我再做個整理 stays clear. Surfaced once the no-speech gate stopped masking it by score alone.
+    r"|ming pao|amara\.org|字幕(組|小組)|字幕由|字幕志願者|整理[&＆]字幕"
+    r"|本期的?(影片|視頻|節目)|謝謝觀看|感謝觀看"
     # Whole line only. This room builds subtitling software and says 字幕 in earnest —
     # 會議紀錄的中文字幕要不要做 is a sentence someone here will say. A line that is nothing but
     # 中文字幕提供 is a credit.

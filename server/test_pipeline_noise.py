@@ -61,6 +61,9 @@ def test_youtube_boilerplate_is_dropped() -> None:
                  "Cảm ơn các bạn đã theo dõi và hẹn gặp lại.",
                  "您可以訂閱我們的頻道,並且請點選訂閱",
                  "明鏡及點點欄目",
+                 # A fansub credit that slipped through in a silent gap on the 2026-08-22 recording,
+                 # once the no-speech gate stopped dropping it by score alone. Simplified as emitted.
+                 "整理&字幕志愿者 杨栋梁",
                  "I'll see you in a minute. Thanks for watching."):
         assert asr.is_hallucination(text), text
 
