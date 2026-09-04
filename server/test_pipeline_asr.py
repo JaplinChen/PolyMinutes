@@ -137,18 +137,22 @@ def test_the_cpu_recogniser_accepts_hotwords_and_ignores_them() -> None:
     cpu.set_hotwords("生管 工程變更")  # must not raise
 
 
-def test_a_glossary_prompt_turns_the_no_speech_gate_off() -> None:
-    """no_speech_prob stops describing the audio once hotwords are in the decode.
+def test_a_high_no_speech_score_drops_only_boilerplate_not_content() -> None:
+    """A near-silence score no longer discards real speech — only text that reads as hallucination.
 
-    faster-whisper passes them as a decoder prompt prefix, and the score is read at the first
-    decoding step — with a prefix in front of it, that step answers a different question. Measured
-    on the 2026-08-10 meeting the same clips moved 0.19 -> 0.99 with the prompt on, text identical
-    both times, and this gate then dropped 3 to 7 minutes of real speech per meeting.
+    Two ways a real utterance scores as silence. Hotwords: faster-whisper passes them as a decoder
+    prompt prefix and the score is read at the first decoding step, so with a prefix in front of it
+    that step answers a different question (2026-08-10: the same clips moved 0.19 -> 0.99 with the
+    prompt on, text identical). And natively: on the 2026-08-05 morning meeting, accented room-mic
+    Mandarin scored 0.86–0.96 with no prompt at all — 62 of 69 blanked clips were this gate firing
+    on real speech. So the gate reads the text at a high score: content survives, and only the
+    YouTube boilerplate it exists for (caught by is_hallucination/is_noise/is_degenerate) is dropped.
     """
-    assert not asr_gpu._spoken(_Seg("real speech scored as silence", 0.99))
+    # Content text at a near-silence score is kept — with a glossary prompt or without one.
+    assert asr_gpu._spoken(_Seg("real speech scored as silence", 0.99))
     assert asr_gpu._spoken(_Seg("real speech scored as silence", 0.99), biased=True)
-    # Unbiased decodes keep the gate: it is still the only thing that catches confident boilerplate.
-    assert not asr_gpu._spoken(_Seg("đăng ký kênh", 0.95), biased=False)
+    # The boilerplate the gate exists for is still dropped: the text gives it away, not the score.
+    assert not asr_gpu._spoken(_Seg("đăng ký kênh", 0.95))
 
 
 def test_an_empty_decode_is_retried_without_the_glossary_prompt() -> None:
