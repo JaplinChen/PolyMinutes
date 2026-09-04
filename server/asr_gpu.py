@@ -98,8 +98,19 @@ def _spoken(seg, biased: bool = False) -> bool:
     utterance away. Across five real meetings that was 3 to 7 minutes of speech per meeting.
     Hallucinations stay out through the text filters in `_judge`, which read what was written
     rather than a score: eight seconds of pure silence still decodes to nothing with the gate off.
+
+    So the gate no longer drops on the score alone. Measured on the 2026-08-05 morning meeting,
+    62 of 69 blanked clips were this gate firing on real but accented room-mic Mandarin, whose
+    native no_speech_prob sits at 0.86–0.96 with no prompt in the decode — half of them recoverable
+    speech that matched the human transcript. A high score now only drops a segment whose *text*
+    also reads as hallucination: the YouTube boilerplate silence produces (is_hallucination), a
+    Whisper noise tag (is_noise), or a repetition collapse (is_degenerate). Content text at a high
+    score is kept and left to the same text filters in `_judge` that already guard the rest.
     """
-    return biased or getattr(seg, "no_speech_prob", 0.0) < NO_SPEECH_MAX
+    if biased or getattr(seg, "no_speech_prob", 0.0) < NO_SPEECH_MAX:
+        return True
+    text = getattr(seg, "text", "").strip()
+    return not (asr.is_hallucination(text) or asr.is_noise(text) or asr.is_degenerate(text))
 
 
 def _add_cuda_dlls() -> None:
