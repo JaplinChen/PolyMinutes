@@ -213,9 +213,9 @@ def _cite(raw_id: str, valid_lines: frozenset[int]) -> int | None:
 # only a bracketed id is stripped. After it, any run of more ids/brackets/ranges/pipes/commas is eaten
 # too, so `| [31], [98]` and `[125]、[130]` leave clean text. The captured group is the first id.
 _TRAIL_CITE = re.compile(
-    r"[\s(（|｜]*\[(\d+)(?:\s*[,，]\s*\d+)*\]"
-    r"(?:[\s,，、|｜~\-–]*\[?\d+(?:\s*[,，]\s*\d+)*\]?)*"
-    r"[)）\s。，,.、|｜]*$")
+    r"[\s(（|｜&＆]*\[(\d+)(?:\s*[,，]\s*\d+)*\]"
+    r"(?:[\s,，、|｜~\-–&＆]*\[?\d+(?:\s*[,，]\s*\d+)*\]?)*"
+    r"[)）\s。，,.、|｜&＆]*$")
 
 
 def _pull_citation(item: str, valid_lines: frozenset[int]) -> tuple[str, int | None]:
@@ -257,7 +257,9 @@ def _split_citation(item: str, valid_lines: frozenset[int]) -> tuple[str, str, i
                 line = cited
         elif not speaker:
             speaker = seg
-    return text.strip(), speaker, line
+    # A citation the model joined with "&&" instead of "[id]" (qwen/gemma both do it) leaves the
+    # "&&" behind once the id is stripped; clear a trailing run of it and of stray pipes.
+    return text.strip().rstrip(" 　&＆|｜").rstrip(), speaker, line
 
 
 def _cited_bullets(block: str, valid_lines: frozenset[int]) -> list[dict]:

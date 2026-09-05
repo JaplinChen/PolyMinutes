@@ -192,6 +192,7 @@ def test_parse_response_tolerates_the_citation_shapes_gemma_actually_emits():
         "- 決議甲 [31, 98]",            # several ids in one bracket -> first
         "- 決議乙 | [12], [98]",         # single pipe, two brackets
         "- 決議丙 ||總經理 [65]",         # a speaker slipped into the citation slot
+        "- 決議丁 && [98]",              # "&&" joined citation — the id is kept, the "&&" cleared
         "ACTIONS:",
         "- 行動甲 [12] || QC 經理 || [12]",  # the doubled form, inline [id] in the text too
         "RISKS:",
@@ -202,7 +203,8 @@ def test_parse_response_tolerates_the_citation_shapes_gemma_actually_emits():
                            valid_lines=frozenset({12, 31, 65, 98}))
     assert got["decisions"] == [{"text": "決議甲", "line": 31},
                                 {"text": "決議乙", "line": 12},
-                                {"text": "決議丙", "line": 65}]
+                                {"text": "決議丙", "line": 65},
+                                {"text": "決議丁", "line": 98}]
     assert got["actions"] == [{"text": "行動甲", "speaker": "QC 經理", "line": 12}]
     assert got["risks"] == [{"text": "風險甲", "line": 98}]
 
