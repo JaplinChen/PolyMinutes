@@ -218,6 +218,19 @@ _TRAIL_CITE = re.compile(
     r"[)）\s。，,.、|｜&＆]*$")
 
 
+def _first_valid_id(citation: str, valid_lines: frozenset[int]) -> int | None:
+    """First id in a trailing citation that verifies. The model lists several supporting lines and
+    the first is often wrong while a later one is real — measured on session 3, `[17445, 17446]` had
+    17446 valid but 17445 not — so every id is tried, not just the first. With no valid set (a test
+    calling parse_response directly) the first id is trusted as before."""
+    ids = [int(x) for x in re.findall(r"\d+", citation)]
+    if not ids:
+        return None
+    if not valid_lines:
+        return ids[0]
+    return next((i for i in ids if i in valid_lines), None)
+
+
 def _pull_citation(item: str, valid_lines: frozenset[int]) -> tuple[str, int | None]:
     """Split an item into (text, verified line_id), accepting `... || 12` or a trailing `[12]`."""
     head, sep, tail = item.rpartition("||")
@@ -227,7 +240,7 @@ def _pull_citation(item: str, valid_lines: frozenset[int]) -> tuple[str, int | N
             return head.strip(), line
     m = _TRAIL_CITE.search(item)
     if m:
-        line = _cite(m.group(1), valid_lines)
+        line = _first_valid_id(m.group(0), valid_lines)
         if line is not None:
             return item[:m.start()].rstrip(), line
     return item.strip(), None
