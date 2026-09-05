@@ -309,6 +309,28 @@ def test_summarize_retry_succeeds():
     assert status == "ok" and out["zh"]["title"] == "zt"
 
 
+def test_summarize_retries_a_well_formed_reply_that_cited_nothing():
+    # The format-collapse case: the reply parses (all sections present) but every item lost its
+    # citation, though the excerpt has an id to cite. Retry once and take it when it actually cites.
+    lines = [SummaryLine("S1", "zh", "先講進度", id=12)]
+    uncited = _valid("zt", decisions=["決議一"])          # well-formed, but no [id]
+    cited = _valid("zt2", decisions=["決議一 [12]"])       # the retry cites
+    out, status = S.summarize(lines, ["zh"], _chat_by_lang({"zh": [uncited, cited]}))
+    assert status == "ok"
+    assert out["zh"]["decisions"] == [{"text": "決議一", "line": 12}]
+
+
+def test_summarize_keeps_content_when_the_citation_retry_also_fails():
+    # If the retry cites nothing either, keep the first well-formed reply — content over a jump.
+    lines = [SummaryLine("S1", "zh", "先講進度", id=12)]
+    out, status = S.summarize(lines, ["zh"],
+                              _chat_by_lang({"zh": [_valid("a", decisions=["決議一"]),
+                                                    _valid("b", decisions=["決議二"])]}))
+    assert status == "ok"
+    assert out["zh"]["title"] == "a"
+    assert out["zh"]["decisions"] == [{"text": "決議一", "line": None}]
+
+
 def test_summarize_failed_when_all_garbage():
     calls = {"zh": ["g", "g"], "en": ["g", "g"]}
     out, status = S.summarize([SummaryLine("S1", "zh", "hi")], ["zh", "en"], _chat_by_lang(calls))
