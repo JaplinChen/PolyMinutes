@@ -181,6 +181,32 @@ def test_parse_response_accepts_inline_bracket_citations():
     assert got["risks"] == [{"text": "新人可能產生不良品", "line": 17398}]
 
 
+def test_parse_response_tolerates_the_citation_shapes_gemma_actually_emits():
+    # All verbatim shapes from the 2026-08-05 meeting that used to lose the citation or leave crud in
+    # the text: several ids in one bracket, two brackets after a single pipe, a speaker slipped into
+    # the citation slot, and the doubled `[id] || speaker || [id]`. Each must yield a clean text and
+    # the first verified id, with no bracket or pipe surviving in the shown text.
+    raw = "\n".join([
+        "TITLE: T", "SUMMARY:", "S",
+        "DECISIONS:",
+        "- 決議甲 [31, 98]",            # several ids in one bracket -> first
+        "- 決議乙 | [12], [98]",         # single pipe, two brackets
+        "- 決議丙 ||總經理 [65]",         # a speaker slipped into the citation slot
+        "ACTIONS:",
+        "- 行動甲 [12] || QC 經理 || [12]",  # the doubled form, inline [id] in the text too
+        "RISKS:",
+        "- 風險甲 ||總經理 [98, 31]",
+        "OPEN_QUESTIONS:",
+    ])
+    got = S.parse_response(raw, valid_speakers=frozenset({"QC 經理"}),
+                           valid_lines=frozenset({12, 31, 65, 98}))
+    assert got["decisions"] == [{"text": "決議甲", "line": 31},
+                                {"text": "決議乙", "line": 12},
+                                {"text": "決議丙", "line": 65}]
+    assert got["actions"] == [{"text": "行動甲", "speaker": "QC 經理", "line": 12}]
+    assert got["risks"] == [{"text": "風險甲", "line": 98}]
+
+
 def test_parse_response_keeps_multiline_summary():
     raw = _valid(summary="【背景】第一段\n【討論】第二段「原話」")
     assert S.parse_response(raw)["summary"] == "【背景】第一段\n【討論】第二段「原話」"
