@@ -195,6 +195,7 @@ def test_parse_response_tolerates_the_citation_shapes_gemma_actually_emits():
         "- 決議丁 && [98]",              # "&&" joined citation — the id is kept, the "&&" cleared
         "ACTIONS:",
         "- 行動甲 [12] || QC 經理 || [12]",  # the doubled form, inline [id] in the text too
+        "- 檢查甲 && 修正乙 || QC 經理 || [31]",  # "&&" used mid-text as a conjunction -> comma
         "RISKS:",
         "- 風險甲 ||總經理 [98, 31]",
         "OPEN_QUESTIONS:",
@@ -205,7 +206,8 @@ def test_parse_response_tolerates_the_citation_shapes_gemma_actually_emits():
                                 {"text": "決議乙", "line": 12},
                                 {"text": "決議丙", "line": 65},
                                 {"text": "決議丁", "line": 98}]
-    assert got["actions"] == [{"text": "行動甲", "speaker": "QC 經理", "line": 12}]
+    assert got["actions"] == [{"text": "行動甲", "speaker": "QC 經理", "line": 12},
+                              {"text": "檢查甲，修正乙", "speaker": "QC 經理", "line": 31}]
     assert got["risks"] == [{"text": "風險甲", "line": 98}]
 
 

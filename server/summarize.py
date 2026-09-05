@@ -258,8 +258,18 @@ def _split_citation(item: str, valid_lines: frozenset[int]) -> tuple[str, str, i
         elif not speaker:
             speaker = seg
     # A citation the model joined with "&&" instead of "[id]" (qwen/gemma both do it) leaves the
-    # "&&" behind once the id is stripped; clear a trailing run of it and of stray pipes.
-    return text.strip().rstrip(" 　&＆|｜").rstrip(), speaker, line
+    # "&&" behind once the id is stripped; clear a trailing run of it and of stray pipes. A "&&" left
+    # mid-text is the model using it as a conjunction ("A && B") — `_deamp` turns that into a comma.
+    return _deamp(text).rstrip(" 　&＆|｜").rstrip(), speaker, line
+
+
+# "&&" / "＆＆" is never real content — the model reaches for it as "and". A single "&" is left alone
+# (R&D, A&B). Collapsed to a comma with its surrounding spaces so "A && B" reads "A，B".
+_AMP2 = re.compile(r"\s*[&＆]{2,}\s*")
+
+
+def _deamp(text: str) -> str:
+    return _AMP2.sub("，", text).strip()
 
 
 def _cited_bullets(block: str, valid_lines: frozenset[int]) -> list[dict]:
@@ -286,8 +296,8 @@ def parse_response(raw: str, valid_speakers: frozenset[str] = frozenset(),
         elif current is not None:
             sections[current].append(line)
 
-    title = "\n".join(sections.get("TITLE", [])).strip()
-    summary = "\n".join(sections.get("SUMMARY", [])).strip()
+    title = _deamp("\n".join(sections.get("TITLE", [])))
+    summary = _deamp("\n".join(sections.get("SUMMARY", [])))
     if not title:
         raise ValueError(f"missing TITLE section: {raw[:200]!r}")
     if not summary:
