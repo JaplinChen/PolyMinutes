@@ -351,6 +351,29 @@ def retry_prompt(original: str, bad_reply: str, error: str) -> str:
     ])
 
 
+def _cited_count(parsed: dict) -> tuple[int, int]:
+    """(items carrying a line id, total items) across the four cited sections."""
+    cited = total = 0
+    for sec in ("decisions", "actions", "risks", "open_questions"):
+        for it in parsed.get(sec, []):
+            total += 1
+            cited += it.get("line") is not None
+    return cited, total
+
+
+def retry_cite_prompt(original: str, bad_reply: str) -> str:
+    """A well-formed reply that cited nothing — the model dropped the id convention for the whole
+    answer. Ask again, spelling out that every item must end with its supporting line id."""
+    return "\n".join([
+        original,
+        "",
+        "Your previous reply was well-formed but cited no line ids, so nothing links back to the "
+        "transcript. Answer again, ending every decision, action, risk and open-question with the "
+        "supporting line id as `[<id>]`, using only ids shown in the excerpt above.",
+        f"  previous reply: {bad_reply[:400]}",
+    ])
+
+
 def max_tokens_for(target: int) -> int:
     # Double the character target covers CJK tokenization plus the labelled-section overhead
     # (title, decisions, actions, risks, open_questions).
@@ -380,12 +403,28 @@ def summarize(lines: list[SummaryLine], languages: list[str], chat: Callable[[st
                               reference=reference)
         raw = chat(prompt)
         try:
-            out[lang] = parse_response(raw, valid, valid_lines)
+            parsed = parse_response(raw, valid, valid_lines)
         except ValueError as first:
             try:
-                out[lang] = parse_response(chat(retry_prompt(prompt, raw, str(first))), valid, valid_lines)
+                raw = chat(retry_prompt(prompt, raw, str(first)))
+                parsed = parse_response(raw, valid, valid_lines)
             except ValueError:
-                pass  # recorded as missing; status below says partial/failed
+                continue  # both schema attempts failed; recorded as missing (status below)
+
+        # Well-formed but every citation dropped, though the excerpt had ids to cite: the model
+        # abandoned the "[id]" convention for the whole reply — a frequent local-model collapse that
+        # the schema retry above does not catch, since the sections are all present. One more try
+        # nudging the format; keep it only if it actually cites, else keep the (uncited) content.
+        if valid_lines:
+            cited, total = _cited_count(parsed)
+            if total and not cited:
+                try:
+                    retried = parse_response(chat(retry_cite_prompt(prompt, raw)), valid, valid_lines)
+                    if _cited_count(retried)[0]:
+                        parsed = retried
+                except ValueError:
+                    pass
+        out[lang] = parsed
 
     if len(out) == len(languages):
         return out, "ok"
