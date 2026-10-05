@@ -106,7 +106,9 @@ _HALLUCINATIONS = re.compile(
     r"|^中文字幕(提供)?$"
     # The same credit with a name after it — 中文字幕——YK, 中文字幕：李宗盛 — from a far speaker
     # on the 2026-10-05 recording. Still whole-line: a name of at most four characters, nothing else.
-    r"|^中文字幕\s*[—\-:：,，·]+\s*[A-Za-z一-鿿]{1,4}[。.!！]?$"
+    # A space is a separator too: Whisper emits 中文字幕 李宗盛 and the segment stage adds the colon
+    # afterwards, past this filter. No separator at all stays clear — 中文字幕要做 is speech.
+    r"|^中文字幕[\s—\-:：,，·]+[A-Za-z一-鿿]{1,4}[。.!！]?$"
     # A video's comment prompt, same recording. 下方 alone is 往下方移動; the prompt is the
     # invitation to post an opinion.
     r"|下方(留言|發表您?的(想法|意見|看法))"
