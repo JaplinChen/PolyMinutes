@@ -184,3 +184,18 @@ def test_english_signoffs_and_single_token_collapse() -> None:
 
     assert asr.is_degenerate("YAMAHA YAMAHA YAMAHA YAMAHA YAMAHA")
     assert not asr.is_degenerate("YAMAHA YAMAHA")
+
+
+def test_far_speaker_credits_and_loops() -> None:
+    """Lines from a far, unclear speaker on the 2026-10-05 recording."""
+    for text in ("中文字幕——YK。", "中文字幕：李宗盛。", "中文字幕，李宗盛。", "您可以在下方發表您的想法。"):
+        assert asr.is_hallucination(text), text
+    for text in ("中文字幕的部分請廠商報價", "把箱子往下方移動", "下方的欄位要填"):
+        assert not asr.is_hallucination(text), text
+
+    assert asr._post("工序分包，工序分包，工序分包。", "zh") == "工序分包。"
+    assert asr._post("要怎麼、怎麼、怎麼？", "zh") == "要怎麼？"
+    assert asr._post("我還是有特別特別特別的", "zh") == "我還是有特別的"
+    assert asr._post("大家好大家好", "zh") == "大家好大家好"
+    assert asr._post("對對對", "zh") == "對對對"
+    assert asr._post("very very very", "en") == "very very very"
