@@ -188,9 +188,10 @@ def test_english_signoffs_and_single_token_collapse() -> None:
 
 def test_far_speaker_credits_and_loops() -> None:
     """Lines from a far, unclear speaker on the 2026-10-05 recording."""
-    for text in ("中文字幕——YK。", "中文字幕：李宗盛。", "中文字幕，李宗盛。", "您可以在下方發表您的想法。"):
+    for text in ("中文字幕——YK。", "中文字幕：李宗盛。", "中文字幕，李宗盛。", "中文字幕 李宗盛",
+                 "您可以在下方發表您的想法。"):
         assert asr.is_hallucination(text), text
-    for text in ("中文字幕的部分請廠商報價", "把箱子往下方移動", "下方的欄位要填"):
+    for text in ("中文字幕的部分請廠商報價", "中文字幕要做", "把箱子往下方移動", "下方的欄位要填"):
         assert not asr.is_hallucination(text), text
 
     assert asr._post("工序分包，工序分包，工序分包。", "zh") == "工序分包。"
