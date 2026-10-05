@@ -104,6 +104,12 @@ _HALLUCINATIONS = re.compile(
     # 會議紀錄的中文字幕要不要做 is a sentence someone here will say. A line that is nothing but
     # 中文字幕提供 is a credit.
     r"|^中文字幕(提供)?$"
+    # The same credit with a name after it — 中文字幕——YK, 中文字幕：李宗盛 — from a far speaker
+    # on the 2026-10-05 recording. Still whole-line: a name of at most four characters, nothing else.
+    r"|^中文字幕\s*[—\-:：,，·]+\s*[A-Za-z一-鿿]{1,4}[。.!！]?$"
+    # A video's comment prompt, same recording. 下方 alone is 往下方移動; the prompt is the
+    # invitation to post an opinion.
+    r"|下方(留言|發表您?的(想法|意見|看法))"
     # Broadcast sign-offs, from a factory morning meeting where three of them arrived in a row
     # just before the real agenda started. 本集 and 本節目 only ever introduce a programme; a
     # meeting that says 本集團 or 年終節目 keeps both, since neither matches these.
@@ -350,4 +356,12 @@ class Transcriber:
 def _post(text: str, language: str) -> str:
     # Only Chinese needs conversion. Whisper reports zh for both scripts and always emits
     # Simplified, so this is what keeps Simplified characters off the meeting-room TV.
-    return _to_traditional.convert(text) if language.startswith("zh") else text
+    if not language.startswith("zh"):
+        return text
+    return _REPEAT_LOOP.sub(r"\1", _to_traditional.convert(text))
+
+
+# A phrase looped three or more times — 工序分包，工序分包，工序分包 — is the decoder stuck on
+# unclear audio, too short for is_degenerate's ratio to catch. Collapsed to one rather than
+# dropped: the phrase itself was usually said. Two-character minimum keeps 對對對 and 好好好.
+_REPEAT_LOOP = re.compile(r"([一-鿿A-Za-z]{2,8}?)(?:[，,、\s]*\1){2,}")
