@@ -79,14 +79,21 @@ interface Props {
   onReassign: (lineId: number, speaker: string) => void;
 }
 
+// avg_logprob below this reads as a guess. On the 2026-10-05 meeting (large-v3) it marks 14% of
+// lines: 31 of 45 from the far speaker, 4 of 210 from the chair. -0.8 marked 18% — too many to scan.
+const LOW_CONFIDENCE = -0.9;
+
 function Row({ line, speakerOptions, newSpeakerCode, langs, locked, pending, draftText, isRerunning, rerunBlocked, isPlaying, playable, onDraft, onSave, onRerun, onRetranslate, onPlay, onReassign }: Props) {
   const { t } = useTranslation();
   const editing = draftText === null ? null : { id: line.id, text: draftText };
   const [shown, setShown] = useState(false);
   const has = langs.some(l => line.translations[l]);
+  const unsure = line.confidence != null && line.confidence < LOW_CONFIDENCE;
 
   return (
-    <article data-line-id={line.id} className={`sess-line${line.status === 'ok' ? '' : ' sess-line-failed'}${pending ? ' sess-line-pending' : ''}`}>
+    <article data-line-id={line.id} className={`sess-line${line.status === 'ok' ? '' : ' sess-line-failed'}${pending ? ' sess-line-pending' : ''}${unsure ? ' sess-line-lowconf' : ''}`}
+      title={unsure ? t('sessions.lowConfidence') : undefined}
+    >
       <div className="sess-time">
         {/* One button per line, but one <audio> for the whole transcript — 943 media elements is
             not a price worth paying for a control that plays one thing at a time. */}

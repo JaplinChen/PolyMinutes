@@ -180,6 +180,8 @@ export interface TranscriptLine {
   status: LineStatus;
   end_time: number | null;
   translations: Record<string, string>;
+  /** Duration-weighted avg_logprob (<= 0) from post-meeting ASR; null for live/subtitle/edited lines. */
+  confidence?: number | null;
 }
 
 export const appApi = {

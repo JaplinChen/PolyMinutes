@@ -90,6 +90,7 @@
     "stageSummarize": "Đang tạo tóm tắt",
     "refineProgress": "{{done}} / {{total}} dòng",
     "linePending": "đang xử lý",
+    "lowConfidence": "Độ tin cậy nhận dạng thấp — nên soát lại",
     "refineSkipped": "{{count}} dòng chưa được thêm dấu câu/tinh chỉnh",
     "notifyTitle": "PolyMinutes",
     "editLocked": "Không sửa được khi đang tinh chỉnh",

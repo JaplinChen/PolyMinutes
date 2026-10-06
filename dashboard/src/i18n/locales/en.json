@@ -90,6 +90,7 @@
     "stageSummarize": "Generating summary",
     "refineProgress": "{{done}} / {{total}} lines",
     "linePending": "pending",
+    "lowConfidence": "Low recognition confidence — worth proofreading",
     "refineSkipped": "{{count}} lines were left without punctuation/refinement",
     "notifyTitle": "PolyMinutes",
     "editLocked": "Locked while refining",

@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from . import segment
+import tempfile
+from pathlib import Path
+
+import numpy as np
+
+from . import postprocess, segment
+from . import store as store_mod
 
 
 def _row(source: str, start: float = 0.0, end: float | None = None, speaker: str = "S1",
@@ -69,3 +75,46 @@ def test_punctuation_prompt_numbers_every_line() -> None:
     prompt = segment.build_prompt(["第一句", "第二句"])
     assert "1: 第一句" in prompt and "2: 第二句" in prompt
     assert "不得增加、刪除或修改任何字" in prompt
+
+
+def test_line_confidence_rides_the_batch_and_merges_to_its_least_sure_fragment() -> None:
+    """The decoding pass's confidence reaches the row — the retry's own for a retried line, none
+    from a recogniser that does not score; a merge keeps the minimum; a rerun or edit clears it."""
+    class FakeTranscriber:
+        last_confidence: list = []
+
+        def transcribe_many(self, clips, language):
+            self.last_confidence = [-0.2, -0.9][:len(clips)]
+            return [("你好", "zh"), ("", "zh")][:len(clips)]
+
+        def transcribe(self, samples, language):
+            self.last_confidence = [-1.1]
+            return ("重試", language)
+
+    class Unscored(FakeTranscriber):
+        def transcribe(self, samples, language):
+            return ("重試", language)  # leaves the batch's two-entry list, which must not be read
+
+    for fake, want in ((FakeTranscriber(), [-0.2, -1.1]), (Unscored(), [-0.2, None])):
+        utts = [postprocess.Utterance(0.0, np.zeros(16000, dtype=np.float32), "S1") for _ in range(2)]
+        postprocess.transcribe_all(utts, fake, forced={"S1": "zh"})
+        assert [u.confidence for u in utts] == want, [u.confidence for u in utts]
+
+    st = store_mod.Store(Path(tempfile.mkdtemp()) / "confidence.db")
+    sid = st.start_session("2026-10-05T09:00:00", "")
+    st.replace_lines(sid, [
+        {"start": 0.0, "end_time": 1.0, "speaker": "S1", "lang": "zh", "source": "前半",
+         "confidence": -0.3},
+        {"start": 1.2, "end_time": 2.0, "speaker": "S1", "lang": "zh", "source": "後半",
+         "confidence": -0.8},
+        {"start": 3.0, "end_time": 4.0, "speaker": "S1", "lang": "zh", "source": "現場"},
+    ])
+    a, b, c = st.lines(sid)
+    assert (a["confidence"], c["confidence"]) == (-0.3, None)
+    st.merge_lines(a["id"], [b["id"], c["id"]], "前半後半現場", 4.0, {})
+    (kept,) = st.lines(sid)
+    assert kept["confidence"] == -0.8, kept
+    st.replace_line(kept["id"], "前半後半現場", "zh", {}, "ok")  # retranslate: same words, same score
+    assert st.lines(sid)[0]["confidence"] == -0.8
+    st.replace_line(kept["id"], "人工改過", "zh", {}, "ok", refined=True)
+    assert st.lines(sid)[0]["confidence"] is None
