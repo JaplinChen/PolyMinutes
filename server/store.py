@@ -196,8 +196,11 @@ class Store(SpeakerStore):
         marks = ",".join("?" * len(absorb_ids))
         with self._lock:
             try:
-                self._db.execute("UPDATE line SET source=?, end_time=? WHERE id=?",
-                                 (source, end_time, keep_id))
+                # The merged line is only as sure as its least sure fragment; MIN skips NULLs.
+                self._db.execute(
+                    "UPDATE line SET source=?, end_time=?, confidence="
+                    f"(SELECT MIN(confidence) FROM line WHERE id IN (?,{marks})) WHERE id=?",
+                    (source, end_time, keep_id, *absorb_ids, keep_id))
                 self._db.execute(f"DELETE FROM line WHERE id IN ({marks})", absorb_ids)
                 self._db.execute("DELETE FROM line_translation WHERE line_id=?", (keep_id,))
                 self._db.executemany(
@@ -278,8 +281,9 @@ class Store(SpeakerStore):
                     " WHEN ? THEN COALESCE(orig_source, source)"
                     " WHEN source = ? THEN orig_source"
                     " ELSE NULL END,"
+                    " confidence = CASE WHEN source = ? THEN confidence ELSE NULL END,"
                     " source=?, lang=?, status=? WHERE id=?",
-                    (1 if refined else 0, source, source, lang, status, line_id))
+                    (1 if refined else 0, source, source, source, lang, status, line_id))
                 if refined:
                     self._db.execute("UPDATE line SET refined=1 WHERE id=?", (line_id,))
                 self._db.execute("DELETE FROM line_translation WHERE line_id=?", (line_id,))
@@ -326,10 +330,10 @@ class Store(SpeakerStore):
                 self._db.execute("DELETE FROM line WHERE session_id=?", (session_id,))
                 for row in rows:
                     cur = self._db.execute(
-                        "INSERT INTO line (session_id, start, speaker, lang, source, status, end_time) "
-                        "VALUES (?,?,?,?,?,?,?)",
+                        "INSERT INTO line (session_id, start, speaker, lang, source, status, end_time,"
+                        " confidence) VALUES (?,?,?,?,?,?,?,?)",
                         (session_id, row["start"], row["speaker"], row["lang"], row["source"],
-                         row.get("status", "ok"), row.get("end_time")),
+                         row.get("status", "ok"), row.get("end_time"), row.get("confidence")),
                     )
                     self._db.executemany(
                         "INSERT INTO line_translation (line_id, lang, text) VALUES (?,?,?)",

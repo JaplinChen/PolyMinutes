@@ -288,6 +288,16 @@
   border-bottom: 1px solid var(--border);
 }
 
+.sess-page .sess-line-lowconf {
+  opacity: 0.55;
+  transition: opacity 200ms ease;
+}
+
+.sess-page .sess-line-lowconf:hover,
+.sess-page .sess-line-lowconf:focus-within {
+  opacity: 1;
+}
+
 .sess-page .sess-line:last-child {
   border-bottom: none;
 }

@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS line (
     orig_source TEXT,
     refined    INTEGER NOT NULL DEFAULT 0,
     status     TEXT NOT NULL DEFAULT 'ok',
-    end_time   REAL
+    end_time   REAL,
+    confidence REAL
 );
 CREATE TABLE IF NOT EXISTS line_translation (
     line_id   INTEGER NOT NULL REFERENCES line(id) ON DELETE CASCADE,
@@ -119,6 +120,9 @@ LINE_COLUMNS = (
     # What the line said before a human first corrected it, kept so the transcript can show the
     # edit as a strike-through/highlight diff. NULL means never hand-edited.
     ("orig_source", "ALTER TABLE line ADD COLUMN orig_source TEXT"),
+    # Duration-weighted mean avg_logprob of the post-meeting decode. NULL for live lines, imported
+    # subtitles and anything a human or a rerun has since rewritten.
+    ("confidence", "ALTER TABLE line ADD COLUMN confidence REAL"),
 )
 
 

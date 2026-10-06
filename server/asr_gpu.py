@@ -157,6 +157,10 @@ class Transcriber:
         self._batched = None
         # The largest batch this card has been seen to hold, remembered across decodes.
         self._batch = BATCH_SIZE
+        # Per clip of the last transcribe_many, aligned with what it returned: the duration-weighted
+        # mean avg_logprob of the segments kept, None where none were. Beside the return value, not
+        # in it, because every caller and fake unpacks (text, lang).
+        self.last_confidence: list[float | None] = []
         log.info("ct2 model %s on %s:%d/%s", name, device, index, compute_type)
 
     def set_hotwords(self, hotwords: str) -> None:
@@ -182,6 +186,7 @@ class Transcriber:
         letting the model re-segment would take the transcript apart.
         """
         if not clips:
+            self.last_confidence = []
             return []
 
         gap = np.zeros(int(BATCH_GAP_SECONDS * config.SAMPLE_RATE), dtype=np.float32)
@@ -204,6 +209,7 @@ class Transcriber:
         # Each segment is placed by its midpoint, so a decode that runs slightly over its clip
         # still lands on the utterance it came from.
         texts = ["" for _ in clips]
+        weights = [[0.0, 0.0] for _ in clips]
         biased = bool(self._hotwords)
         for seg in segments:
             # A confident-silence segment is Whisper filling a gap between speakers; dropping it here
@@ -214,8 +220,13 @@ class Transcriber:
             for i, span in enumerate(spans):
                 if span["start"] <= middle <= span["end"]:
                     texts[i] = (texts[i] + seg.text).strip()
+                    seconds = max(seg.end - seg.start, 0.0)
+                    weights[i][0] += getattr(seg, "avg_logprob", 0.0) * seconds
+                    weights[i][1] += seconds
                     break
 
+        self.last_confidence = [total / seconds if seconds else None
+                                for total, seconds in weights]
         detected = (info.language or language or "").strip()
         return [self._judge(text, detected) for text in texts]
 
@@ -292,8 +303,14 @@ class Transcriber:
             hotwords=self._hotwords or None,
             condition_on_previous_text=False,  # one VAD utterance at a time carries no history
         )
-        text = "".join(s.text for s in segments if _spoken(s, bool(self._hotwords))).strip()
+        kept = [s for s in segments if _spoken(s, bool(self._hotwords))]
+        text = "".join(s.text for s in kept).strip()
         detected = (info.language or language or "").strip()
+        seconds = sum(max(s.end - s.start, 0.0) for s in kept)
+        # A single decode reports through the same list, so a retry in the speaker's language —
+        # 43% of the 2026-10-05 meeting — carries its own score instead of none.
+        self.last_confidence = [sum(getattr(s, "avg_logprob", 0.0) * max(s.end - s.start, 0.0)
+                                    for s in kept) / seconds if seconds else None]
 
         # Same three refusals as the sherpa path, including the collapse check: a first-pass
         # auto-detect that returns 產品 產品 產品 產品 must not have the language it invented for

@@ -116,6 +116,8 @@ class Utterance:
     # Which decode this utterance's language came out of. Utterances sharing one are not
     # independent readings of what language was spoken — see `dominant_languages`.
     decode: int = -1
+    # The decoder's own certainty (asr_gpu.last_confidence), from whichever decode wrote the text.
+    confidence: float | None = None
 
 
 def best_model() -> Path:
@@ -483,8 +485,12 @@ def transcribe_all(utterances: list[Utterance], transcriber: asr.Transcriber,
         done = 0
         for start in range(0, len(utterances), BATCH_UTTERANCES):
             group = utterances[start : start + BATCH_UTTERANCES]
-            for u, (text, lang) in zip(group, batch([g.samples for g in group], "")):
-                u.text, u.lang, u.decode = text, lang, start
+            decoded = batch([g.samples for g in group], "")
+            scores = getattr(transcriber, "last_confidence", None)
+            if not isinstance(scores, list) or len(scores) != len(decoded):
+                scores = [None] * len(decoded)
+            for u, (text, lang), score in zip(group, decoded, scores):
+                u.text, u.lang, u.decode, u.confidence = text, lang, start, score
                 done += 1
                 if progress:
                     progress(u, done, len(utterances))
@@ -513,12 +519,14 @@ def transcribe_all(utterances: list[Utterance], transcriber: asr.Transcriber,
             # Still empty means the speaker's own language decoded this as noise as well, which is
             # what static sounds like to Whisper. Drop it rather than keep a phantom line.
             u.text, u.lang = (text, used) if text else ("", u.lang)
+            scores = getattr(transcriber, "last_confidence", None)
+            u.confidence = scores[0] if isinstance(scores, list) and len(scores) == 1 else None
 
 
 def translated_rows(entries, store: Store, cfg: config.Config,
                     translator: translate.Translator | None,
                     stop: Callable[[], bool]) -> list[dict]:
-    """Corrected, translated line rows from (start, end_time, speaker, lang, text) entries.
+    """Corrected, translated line rows from (start, end_time, speaker, lang, text[, confidence]).
 
     One loop for both ways a transcript comes to exist — decoded from audio or read off a subtitle
     track — so the corrector, the rolling context, the glossary and the failed-translation status
@@ -528,7 +536,7 @@ def translated_rows(entries, store: Store, cfg: config.Config,
     corrector = correct.Corrector(terms, store.corrections())
     context: list[translate.Line] = []
     rows: list[dict] = []
-    for start, end_time, speaker, lang, text in entries:
+    for start, end_time, speaker, lang, text, *rest in entries:
         if stop():
             raise jobs.Cancelled()
         if not text:
@@ -557,6 +565,7 @@ def translated_rows(entries, store: Store, cfg: config.Config,
             "source": text,
             "translations": translations,
             "status": status,
+            "confidence": rest[0] if rest else None,
         })
         context.append(line)
     return rows
@@ -658,8 +667,8 @@ def rewrite_session(store: Store, session_id: int, wav: Path, cfg: config.Config
     # The stored transcript is not touched until every line is translated. Replacing it line by
     # line as they came in meant a failure halfway through left the session holding half a
     # transcript, and a failure right after the delete left it holding none.
-    entries = ((u.start, u.start + len(u.samples) / config.SAMPLE_RATE, u.speaker, u.lang, u.text)
-               for u in utterances)
+    entries = ((u.start, u.start + len(u.samples) / config.SAMPLE_RATE, u.speaker, u.lang, u.text,
+                u.confidence) for u in utterances)
     rows = translated_rows(entries, store, cfg, translator, stop)
 
     # replace_lines deletes the old transcript before inserting the new. An empty result would make
