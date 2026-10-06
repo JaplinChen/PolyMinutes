@@ -367,6 +367,11 @@ def rerun_line(session_id: int, line_id: int) -> dict:
             # A forced language on a mumbled clip can decode to nothing; one auto-detect
             # retry before declaring the line unrecognisable.
             text, used = transcriber.transcribe(samples, "")
+        # The same last resort as the post-meeting pass: the glossary prompt can lock the decoder
+        # into a loop — 智慧化工廠 thirty times over a 42-second line on the 2026-10-05 meeting,
+        # which then decodes cleanly without it. Without this a re-run undid what the pass saved.
+        if not text and (plain := getattr(transcriber, "transcribe_unbiased", None)):
+            text, used = plain(samples, line["lang"] or "")
         # Near-silent audio makes the decoder hallucinate the glossary hotwords back at
         # us — from either attempt — so a result that is mostly glossary terms is
         # discarded rather than saved as if someone had said it.

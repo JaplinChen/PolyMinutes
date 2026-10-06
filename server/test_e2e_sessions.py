@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 from fastapi.testclient import TestClient
 
-from . import config, jobs, main
+from . import asr_gpu, config, jobs, main
 from .e2e_support import seed_session, wait_for
 
 
@@ -628,6 +628,35 @@ def test_rerunning_a_line_refuses_what_it_should(client: TestClient) -> None:
     # A line with no duration is refused rather than decoded as a 60-second span.
     main.store.replace_line(line_id, "一行", "zh", {}, "ok")
     assert client.post(f"/api/sessions/{session_id}/lines/{line_id}/rerun").status_code == 400
+
+
+def test_a_rerun_falls_back_to_an_unbiased_decode(client: TestClient) -> None:
+    """The glossary prompt looped one 42-second line into 智慧化工廠 thirty times — refused as
+    degenerate — and the re-run kept failing, while the same clip decoded cleanly without it."""
+    import soundfile as sf
+
+    class PromptLocked:
+        def transcribe(self, samples, language):
+            return "", language
+
+        def transcribe_unbiased(self, samples, language):
+            return "數位化智慧化工廠的部分", language
+
+    jobs.reset()
+    session_id = seed_session("rerun-unbiased.wav")
+    sf.write(str(config.RECORDINGS_DIR / "rerun-unbiased.wav"),
+             np.zeros(config.SAMPLE_RATE * 2, dtype=np.float32), config.SAMPLE_RATE)
+    line = main.store.lines(session_id)[0]
+    main.store._db.execute("UPDATE line SET end_time=1.5 WHERE id=?", (line["id"],))
+
+    original = asr_gpu.maybe
+    asr_gpu.maybe = lambda *a, **k: PromptLocked()
+    try:
+        r = client.post(f"/api/sessions/{session_id}/lines/{line['id']}/rerun")
+    finally:
+        asr_gpu.maybe = original
+    assert r.status_code == 200, r.text
+    assert main.store.lines(session_id)[0]["source"] == "數位化智慧化工廠的部分"
 
 
 def test_unnamed_speaker_can_be_heard_before_naming(client: TestClient) -> None:
