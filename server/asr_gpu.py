@@ -359,6 +359,20 @@ def maybe(languages: list[str], hotwords: str = "", live: bool = False) -> Trans
         return None
 
 
+def decode(transcriber, samples: np.ndarray, language: str) -> tuple[str, str]:
+    """One clip, with the glossary prompt dropped as a last resort if the biased decode is empty.
+
+    The one ladder both the post-meeting retry and the per-line re-run climb. They each had their
+    own once, and the re-run's lacked this step: a 42-second line the pass had saved — the prompt
+    had looped it into 智慧化工廠 thirty times — went back to 未能辨識 the moment someone re-ran it.
+    A recogniser without `transcribe_unbiased` (the CPU one, test fakes) just gets the one attempt.
+    """
+    text, used = transcriber.transcribe(samples, language)
+    if not text and (plain := getattr(transcriber, "transcribe_unbiased", None)):
+        text, used = plain(samples, language)
+    return text, used
+
+
 # Characters of glossary allowed into the decoder prompt. Whisper reserves half its 448-token
 # context for prompt text, so hotwords past ~224 tokens are silently dropped — and it drops the
 # tail, which is whichever terms happen to sort last. Budgeting in characters rather than tokens
