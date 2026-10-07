@@ -38,6 +38,18 @@ HAN = re.compile(r"[一-鿿]")
 LATIN_TOKEN = re.compile(r"[A-Za-zÀ-ỹ][A-Za-zÀ-ỹ'’-]*")
 
 
+def _latin(char: str) -> bool:
+    return char.isascii() and char.isalnum() or "À" <= char <= "ỹ"
+
+
+def _whole_word(text: str, start: int, end: int) -> bool:
+    """A Latin edge of an alias must not continue into a Latin word: G→PCS turned NG into NPCS,
+    di→rty turned Media into Mertya. Han edges need no boundary — Chinese has no spaces."""
+    if _latin(text[start]) and start > 0 and _latin(text[start - 1]):
+        return False
+    return not (_latin(text[end - 1]) and end < len(text) and _latin(text[end]))
+
+
 def edit_distance(a: str, b: str) -> int:
     prev = list(range(len(b) + 1))
     for i, ca in enumerate(a, 1):
@@ -145,7 +157,7 @@ class Corrector:
         i, n = 0, len(text)
         while i < n:
             for wrong, right in self._aliases:  # longest first, so a term beats its own prefix
-                if wrong and text.startswith(wrong, i):
+                if wrong and text.startswith(wrong, i) and _whole_word(text, i, i + len(wrong)):
                     out.append(right)
                     i += len(wrong)
                     break
