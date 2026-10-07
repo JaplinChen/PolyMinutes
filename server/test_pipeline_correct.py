@@ -38,6 +38,18 @@ def test_human_corrections_outrank_the_glossary() -> None:
     assert correct.Corrector([], {}).fix("原文不動") == "原文不動"
 
 
+def test_a_latin_alias_only_replaces_whole_words() -> None:
+    """Rules learned from real edits, replayed on the 2026-10 raw transcripts."""
+    c = correct.Corrector([], {"G": "PCS", "di": "rty", "VS": "infast", "6場": "六廠", "ELP系統": "ERP系統"})
+    assert c.fix("那有一些孔位NG") == "那有一些孔位NG"
+    assert c.fix("Media Estimator") == "Media Estimator"
+    assert c.fix("VSUS是佔了14件") == "VSUS是佔了14件"
+    assert c.fix("每個G要檢查") == "每個PCS要檢查"
+    assert c.fix("16場的報表") == "16場的報表"
+    assert c.fix("第6場檢查") == "第六廠檢查"
+    assert c.fix("上ELP系統") == "上ERP系統"
+
+
 def test_one_correction_does_not_cascade_into_another() -> None:
     """Two independently-learned pairs must not chain: applying them sequentially with in-place
     replace let one alias's output become the next alias's input, so a line the user only ever
