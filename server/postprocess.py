@@ -509,13 +509,9 @@ def transcribe_all(utterances: list[Utterance], transcriber: asr.Transcriber,
         # those outright cost 992 real lines across seven interviews — 掃描機這件事情有 and
         # 就會直接進到系統變成需求 among them. The speaker's own language usually recovers them.
         if want and (not u.text or want != u.lang):
-            text, used = transcriber.transcribe(u.samples, want)
-            # Empty again, and the glossary prompt is the last thing left to remove: it is a prior
-            # the decoder can be talked out of a sentence by, and the recogniser that has one
-            # offers a run without it. 5 of 33 utterances lost on the 2026-08-10 meeting came back
-            # only here.
-            if not text and (plain := getattr(transcriber, "transcribe_unbiased", None)):
-                text, used = plain(u.samples, want)
+            # Empty again, and the glossary prompt is the last thing left to remove: 5 of 33
+            # utterances lost on the 2026-08-10 meeting came back only without it.
+            text, used = asr_gpu.decode(transcriber, u.samples, want)
             # Still empty means the speaker's own language decoded this as noise as well, which is
             # what static sounds like to Whisper. Drop it rather than keep a phantom line.
             u.text, u.lang = (text, used) if text else ("", u.lang)
