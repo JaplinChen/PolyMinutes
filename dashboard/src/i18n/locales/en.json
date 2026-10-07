@@ -165,7 +165,12 @@
     "summaryExpand": "Expand summary",
     "summaryCollapse": "Collapse summary",
     "summaryStaleShort": "Outdated",
-    "summaryEmpty": "No summary yet."
+    "summaryEmpty": "No summary yet.",
+    "pendingRuleTitle": "Learn this correction rule?",
+    "pendingRuleBody": "“{{wrong}}” → “{{right}}” would change {{count}} other lines, for example:",
+    "pendingRuleLearn": "Learn",
+    "pendingRuleSkip": "Don't learn",
+    "pendingRuleLearned": "Correction rule learned"
   },
   "glossary": {
     "title": "Glossary",

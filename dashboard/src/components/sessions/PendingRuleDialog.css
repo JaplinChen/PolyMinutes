@@ -1,0 +1,67 @@
+.prule-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  background: rgb(0 0 0 / 0.4);
+}
+
+.prule-dialog {
+  width: 100%;
+  max-width: 32rem;
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: var(--space-6);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-overlay);
+}
+
+.prule-title {
+  margin: 0 0 var(--space-3);
+}
+
+.prule-body {
+  margin: 0 0 var(--space-2);
+  color: var(--text-secondary);
+}
+
+.prule-examples {
+  margin: 0 0 var(--space-4);
+  padding-left: var(--space-5);
+  color: var(--text-secondary);
+}
+
+.prule-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.prule-skip,
+.prule-learn {
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.prule-skip {
+  background: var(--bg-white);
+  color: var(--text-primary);
+}
+
+.prule-learn {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-ink);
+}
+
+.prule-learn:hover {
+  background: var(--primary-hover);
+}

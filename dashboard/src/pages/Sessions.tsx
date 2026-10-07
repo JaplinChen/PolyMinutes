@@ -6,9 +6,10 @@ import { PageHeader } from '../components/PageHeader';
 import { PageSkeleton } from '../components/PageSkeleton';
 import { TranscriptRow } from '../components/sessions/TranscriptRow';
 import { VideoPopup } from '../components/sessions/VideoPopup';
+import { PendingRuleDialog } from '../components/sessions/PendingRuleDialog';
 import { useToast } from '../components/Toast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
-import { appApi, type CitedItem, type MeetingSummary, type RefineJob, type RefineStage, type RefineState, type SessionSummary, type SpeakerSuggestion, type TranscriptLine } from '../services/app.api';
+import { appApi, type CitedItem, type MeetingSummary, type PendingRule, type RefineJob, type RefineStage, type RefineState, type SessionSummary, type SpeakerSuggestion, type TranscriptLine } from '../services/app.api';
 import { API_BASE_URL, NO_SUCH_ENDPOINT } from '../services/http';
 import { editingLocked } from '../services/sessionSummary';
 import './Sessions.css';
@@ -72,6 +73,8 @@ export function Sessions() {
   const [summarizing, setSummarizing] = useState(false);
   const [reference, setReference] = useState('');
   const [savingRef, setSavingRef] = useState(false);
+  // Rules the server held back because they would rewrite other lines too; asked about one by one.
+  const [pendingRules, setPendingRules] = useState<PendingRule[]>([]);
   const tablistRef = useRef<HTMLDivElement>(null);
   const player = useRef<HTMLAudioElement | null>(null);
   // The imported video, when the meeting has one: seeking one element beats cutting a clip per
@@ -334,6 +337,7 @@ export function Sessions() {
     try {
       const r = await appApi.setLineSource(selected, lineId, source.trim());
       setLines(r.lines);
+      if (r.pending_rules?.length) setPendingRules(r.pending_rules);
     } catch (err) {
       fail(err);
     }
@@ -341,6 +345,19 @@ export function Sessions() {
     // defeat the memoisation these callbacks exist to enable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected]);
+
+  const skipRule = useCallback(() => setPendingRules(prev => prev.slice(1)), []);
+  const learnRule = async () => {
+    const rule = pendingRules[0];
+    if (!rule) return;
+    skipRule();
+    try {
+      await appApi.addCorrection(rule.wrong, rule.right, rule.lang);
+      toast.success(t('sessions.pendingRuleLearned'));
+    } catch (err) {
+      fail(err);
+    }
+  };
 
   // Move one line to another speaker. The shared-mic clustering collapses a room into one voice
   // more often than not (see the README's known limits), and language is chosen per speaker — so a
@@ -657,6 +674,7 @@ export function Sessions() {
   return (
     <div className="etable-page sess-page">
       <PageHeader title={t('sessions.title')} subtitle={t('sessions.subtitle')} />
+      {pendingRules[0] && <PendingRuleDialog rule={pendingRules[0]} onLearn={learnRule} onSkip={skipRule} />}
 
       {hasSessions && (
         <section className="etable-panel">

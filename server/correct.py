@@ -228,6 +228,10 @@ def _widenable(char: str) -> bool:
 # like a term pair and are then applied, literally, to every later transcript.
 PUNCTUATION = set(" 	，。、！？：；「」（）,.!?:;-—·")
 _to_simplified = OpenCC("t2s")
+# A rule whose wrong side already appears in this many other lines is a real word more often than
+# a mishearing, so it waits for the user to confirm. Measured 2026-10-07 on 6135 raw ASR lines:
+# catches 29/39 bad learned rules at the cost of 45/207 good ones asking first.
+CONFIRM_IMPACT = 3
 # The same converter asr.py runs every decode through, so "already Traditional" means the same
 # thing on both sides of the pipeline.
 _to_traditional = OpenCC("s2tw")

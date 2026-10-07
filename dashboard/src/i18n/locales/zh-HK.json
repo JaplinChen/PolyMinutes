@@ -165,7 +165,12 @@
     "summaryExpand": "展開摘要",
     "summaryCollapse": "收合摘要",
     "summaryStaleShort": "已過期",
-    "summaryEmpty": "尚未產生摘要。"
+    "summaryEmpty": "尚未產生摘要。",
+    "pendingRuleTitle": "要學習這條修正規則嗎？",
+    "pendingRuleBody": "「{{wrong}}」→「{{right}}」會改動其他 {{count}} 句，例如：",
+    "pendingRuleLearn": "學習",
+    "pendingRuleSkip": "不要學",
+    "pendingRuleLearned": "已學習修正規則"
   },
   "glossary": {
     "title": "詞彙表",
