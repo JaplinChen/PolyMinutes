@@ -10,6 +10,7 @@ this connection and this lock, so `Store` stays the only thing that talks to the
 
 from __future__ import annotations
 
+import os
 import sqlite3
 import threading
 from dataclasses import dataclass
@@ -18,7 +19,9 @@ from pathlib import Path
 from . import config, schema
 from .speakers import SpeakerStore
 
-DB_PATH = config.ROOT / "polyminutes.db"
+# POLYMINUTES_DB points a second server at a copy, so a change can be tried end to end in the
+# browser without the edit landing in the room's real transcripts or learned rules.
+DB_PATH = Path(os.environ.get("POLYMINUTES_DB") or config.ROOT / "polyminutes.db")
 
 # How a glossary term is applied. `keep` exists because code-switched English terms
 # ("schedule", "delay") are shared vocabulary in cross-border teams — translating them into
@@ -261,7 +264,8 @@ class Store(SpeakerStore):
         return dict(row) if row else None
 
     def replace_line(self, line_id: int, source: str, lang: str, translations: dict[str, str],
-                     status: str, refined: bool = False) -> None:
+                     status: str, refined: bool = False,
+                     confidence: float | None = None) -> None:
         """Overwrite one line after re-running it. Leaves `refined` alone by default.
 
         `refined` records that the translator revised this line in hindsight, which is a different
@@ -286,6 +290,10 @@ class Store(SpeakerStore):
                     (1 if refined else 0, source, source, source, lang, status, line_id))
                 if refined:
                     self._db.execute("UPDATE line SET refined=1 WHERE id=?", (line_id,))
+                # A re-run is a fresh decode with its own score; without it a re-run line that is
+                # still a guess lost its fade.
+                if confidence is not None:
+                    self._db.execute("UPDATE line SET confidence=? WHERE id=?", (confidence, line_id))
                 self._db.execute("DELETE FROM line_translation WHERE line_id=?", (line_id,))
                 self._db.executemany(
                     "INSERT INTO line_translation (line_id, lang, text) VALUES (?,?,?)",

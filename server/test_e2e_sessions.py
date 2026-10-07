@@ -640,6 +640,7 @@ def test_a_rerun_falls_back_to_an_unbiased_decode(client: TestClient) -> None:
             return "", language
 
         def transcribe_unbiased(self, samples, language):
+            self.last_confidence = [-1.2]
             return "數位化智慧化工廠的部分", language
 
     jobs.reset()
@@ -656,7 +657,9 @@ def test_a_rerun_falls_back_to_an_unbiased_decode(client: TestClient) -> None:
     finally:
         asr_gpu.maybe = original
     assert r.status_code == 200, r.text
-    assert main.store.lines(session_id)[0]["source"] == "數位化智慧化工廠的部分"
+    rerun = main.store.lines(session_id)[0]
+    assert rerun["source"] == "數位化智慧化工廠的部分"
+    assert rerun["confidence"] == -1.2, rerun  # still a guess, so it keeps its fade
 
 
 def test_unnamed_speaker_can_be_heard_before_naming(client: TestClient) -> None:

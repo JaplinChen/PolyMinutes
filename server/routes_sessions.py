@@ -390,6 +390,8 @@ def rerun_line(session_id: int, line_id: int) -> dict:
         # discarded rather than saved as if someone had said it.
         if text and _mostly_glossary(text, main.store.glossary()):
             text, used = "", ""
+        scores = getattr(transcriber, "last_confidence", None)
+        score = scores[0] if isinstance(scores, list) and len(scores) == 1 else None
 
     if not text:
         # An empty source, not the old text: what was there before a failed re-run is either a
@@ -400,7 +402,8 @@ def rerun_line(session_id: int, line_id: int) -> dict:
 
     text = correct.Corrector(main.store.glossary(), main.store.corrections()).fix(text)
     translations, status = _translate(text, used or line["lang"], line["speaker"], line_id)
-    main.store.replace_line(line_id, text, used or line["lang"], translations, status)
+    main.store.replace_line(line_id, text, used or line["lang"], translations, status,
+                            confidence=score)
     return _transcript(session_id, status)
 
 
