@@ -482,6 +482,8 @@ def test_editing_a_line_teaches_the_correction(client: TestClient) -> None:
     r = client.put(f"/api/sessions/{session}/lines/{line}", json={"source": "那個生管會上系統"})
     assert r.status_code == 200, r.text
     assert r.json()["lines"][0]["source"] == "那個生管會上系統"
+    # Rare enough to learn silently, so nothing waits on the user.
+    assert r.json()["pending_rules"] == []
     learned = client.get("/api/corrections").json()
     assert [(c["wrong"], c["right"]) for c in learned] == [("申管", "生管")]
     # How often the pair was taught rides along. 2, not 1: the retranslate check (alphabetically

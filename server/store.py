@@ -616,6 +616,20 @@ class Store(SpeakerStore):
             )
             self._db.commit()
 
+    def lines_containing(self, text: str, exclude_line_id: int | None = None,
+                         limit: int = 3) -> tuple[int, list[str]]:
+        """How many transcript lines a rule for `text` would rewrite, with a few of them to show."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT source FROM line WHERE instr(source, ?) > 0 AND id IS NOT ?",
+                (text, exclude_line_id)).fetchall()
+        examples = []
+        for r in rows[:limit]:
+            src, at = r["source"], r["source"].find(text)
+            start = max(0, at + len(text) // 2 - 20)
+            examples.append(src[start:start + 40])
+        return len(rows), examples
+
     def corrections(self) -> dict[str, str]:
         with self._lock:
             return {r["wrong"]: r["right"] for r in

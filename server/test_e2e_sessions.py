@@ -1125,3 +1125,33 @@ def test_video_serves_ranges_and_disappears_with_the_meeting(client: TestClient)
 def test_video_404s_for_a_meeting_that_has_none(client: TestClient) -> None:
     session = seed_session("no-video.wav")
     assert client.get(f"/api/sessions/{session}/video").status_code == 404
+
+
+def test_a_common_wrong_side_waits_for_confirmation(client: TestClient) -> None:
+    """自動→之後 learned silently rewrote every 自動 in every meeting; a common wrong side asks first."""
+    before = len(client.get("/api/corrections").json())
+    session = main.store.start_session("now", "x.wav")
+    for i in range(3):
+        main.store.add_line(session, float(i), "S1", "zh", f"第{i}台機器會鋁擠自動停", {})
+    line = main.store.add_line(session, 9.0, "S1", "zh", "那個鋁擠出問題", {})
+
+    r = client.put(f"/api/sessions/{session}/lines/{line}", json={"source": "那個綠擠出問題"})
+    assert r.status_code == 200, r.text
+    pending = r.json()["pending_rules"]
+    assert [(p["wrong"], p["right"], p["lang"], p["count"]) for p in pending] == \
+        [("鋁擠", "綠擠", "zh", 3)], pending
+    assert len(pending[0]["examples"]) == 3 and all("鋁擠" in e for e in pending[0]["examples"])
+    assert "鋁擠" not in {c["wrong"] for c in client.get("/api/corrections").json()}
+    assert len(client.get("/api/corrections").json()) == before
+
+
+def test_a_confirmed_rule_can_be_added_directly(client: TestClient) -> None:
+    before = len(client.get("/api/corrections").json())
+    added = client.post("/api/corrections", json={"wrong": "鋁擠", "right": "綠擠", "lang": "zh"})
+    assert added.status_code == 200, added.text
+    assert {c["wrong"]: c["right"] for c in added.json()}["鋁擠"] == "綠擠"
+    assert client.post("/api/corrections", json={"wrong": "", "right": "x"}).status_code == 400
+    assert client.post("/api/corrections", json={"wrong": "x", "right": " "}).status_code == 400
+    assert client.post("/api/corrections", json={}).status_code == 400
+    client.delete("/api/corrections/鋁擠")
+    assert len(client.get("/api/corrections").json()) == before

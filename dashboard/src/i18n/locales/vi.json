@@ -165,7 +165,12 @@
     "summaryExpand": "Mở rộng tóm tắt",
     "summaryCollapse": "Thu gọn tóm tắt",
     "summaryStaleShort": "Đã cũ",
-    "summaryEmpty": "Chưa có tóm tắt."
+    "summaryEmpty": "Chưa có tóm tắt.",
+    "pendingRuleTitle": "Học quy tắc sửa lỗi này?",
+    "pendingRuleBody": "“{{wrong}}” → “{{right}}” sẽ thay đổi {{count}} dòng khác, ví dụ:",
+    "pendingRuleLearn": "Học",
+    "pendingRuleSkip": "Không học",
+    "pendingRuleLearned": "Đã học quy tắc sửa lỗi"
   },
   "glossary": {
     "title": "Bảng thuật ngữ",

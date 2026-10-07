@@ -82,9 +82,17 @@ def put_line(session_id: int, line_id: int, body: dict) -> dict:
     translations, status = _translate(source, before["lang"], before["speaker"], line_id)
     main.store.replace_line(line_id, source, before["lang"],
                             translations or before["translations"], status, refined=True)
+    # A rule is a literal replacement everywhere, forever. When the wrong side is already common it
+    # is usually a real word (自動→之後), so the user is shown where it would land and asked first.
+    pending = []
     for wrong, right in correct.diff_terms(before["source"], source):
-        main.store.add_correction(wrong, right, before["lang"])
-    return _transcript(session_id, status)
+        count, examples = main.store.lines_containing(wrong, exclude_line_id=line_id)
+        if count < correct.CONFIRM_IMPACT:
+            main.store.add_correction(wrong, right, before["lang"])
+        else:
+            pending.append({"wrong": wrong, "right": right, "lang": before["lang"],
+                            "count": count, "examples": examples})
+    return {**_transcript(session_id, status), "pending_rules": pending}
 
 
 @router.put("/api/sessions/{session_id}/lines/{line_id}/speaker")
@@ -117,6 +125,16 @@ def put_line_speaker(session_id: int, line_id: int, body: dict) -> dict:
 @router.get("/api/corrections")
 def get_corrections() -> list[dict]:
     return main.store.corrections_detail()
+
+
+@router.post("/api/corrections")
+def post_correction(body: dict) -> list[dict]:
+    """Learn a rule the user confirmed after an edit held it back as too far-reaching."""
+    wrong, right = str(body.get("wrong") or "").strip(), str(body.get("right") or "").strip()
+    if not wrong or not right:
+        raise HTTPException(400, "wrong and right required")
+    main.store.add_correction(wrong, right, str(body.get("lang") or ""))
+    return get_corrections()
 
 
 @router.put("/api/corrections/{wrong}")

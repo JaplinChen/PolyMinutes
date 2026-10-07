@@ -37,6 +37,14 @@ export interface SpeakerSuggestion {
 }
 
 /** What the recogniser wrote against what was actually said, learned from an edit. */
+export interface PendingRule {
+  wrong: string;
+  right: string;
+  lang: string;
+  count: number;
+  examples: string[];
+}
+
 export interface LearnedCorrection {
   wrong: string;
   right: string;
@@ -275,8 +283,13 @@ export const appApi = {
       method: 'PUT',
       body: JSON.stringify({ reference }),
     }),
+  addCorrection: (wrong: string, right: string, lang: string) =>
+    request<LearnedCorrection[]>('/corrections', {
+      method: 'POST',
+      body: JSON.stringify({ wrong, right, lang }),
+    }),
   setLineSource: (id: number, lineId: number, source: string) =>
-    request<{ lines: TranscriptLine[]; speakers: Record<string, string> }>(
+    request<{ lines: TranscriptLine[]; speakers: Record<string, string>; pending_rules?: PendingRule[] }>(
       `/sessions/${id}/lines/${lineId}`, { method: 'PUT', body: JSON.stringify({ source }) }),
   // Reassign one line to another speaker: the human splitting the shared-mic collapse back apart.
   // The code may be one the meeting already has or a fresh S-code the caller minted.
