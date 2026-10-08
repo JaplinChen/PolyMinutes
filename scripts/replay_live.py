@@ -39,6 +39,8 @@ def main() -> None:
     args = ap.parse_args()
 
     real_db = ROOT / "polyminutes.db"
+    if not real_db.is_file():
+        sys.exit(f"no database at {real_db} — run from the checkout the server uses")
     copy = Path(tempfile.mkdtemp()) / "replay.db"
     # SQLite's backup, not a file copy: the database runs in WAL mode, so the main file alone can
     # miss committed pages, and a copy paired with a stale -wal read as "disk image is malformed".
@@ -54,7 +56,10 @@ def main() -> None:
 
     store = Store()
     cfg, llm_cfg = config.load(), llm.load_llm()
-    wav = config.recording_path(store.session(args.session_id)["wav_path"])
+    recorded = store.session(args.session_id)
+    if not recorded:
+        sys.exit(f"session {args.session_id} is not in {real_db}")
+    wav = config.recording_path(recorded["wav_path"])
     audio, _ = sf.read(str(wav), dtype="float32", start=int(args.start * config.SAMPLE_RATE),
                        frames=int((args.end - args.start) * config.SAMPLE_RATE))
     if audio.ndim > 1:
