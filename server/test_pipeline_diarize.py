@@ -80,6 +80,43 @@ def test_one_decode_gets_one_language_vote_however_many_clips_it_held() -> None:
     assert postprocess.dominant_languages(english)["S5"] == "en"
 
 
+def test_a_minority_speaker_is_known_by_each_clip_not_by_the_batch() -> None:
+    """2026-10-05: a Vietnamese speaker's 45 clips sat in Mandarin batches, so every batch label
+    said zh and he was decoded as Chinese throughout; each clip on its own read vi at 0.98."""
+    meeting = []
+    for b in range(10):  # ten mixed batches, all labelled zh by the shared detection
+        for _ in range(50):
+            u = postprocess.Utterance(0.0, np.zeros(1, dtype="float32"), "S13", "zh", "x", decode=b)
+            u.detected = "zh"
+            meeting.append(u)
+        for _ in range(4):
+            u = postprocess.Utterance(0.0, np.zeros(1, dtype="float32"), "S39", "zh", "x", decode=b)
+            u.detected = "vi"
+            meeting.append(u)
+    langs = postprocess.dominant_languages(meeting)
+    assert langs == {"S13": "zh", "S39": "vi"}, langs
+
+    # transcribe_all records the per-clip reading and re-decodes S39 in his own language.
+    class Batched:
+        def transcribe_many(self, clips, language):
+            # The Vietnamese clips come back empty: decoded as Chinese, the filter threw them out.
+            # They must still vote by their own language ID — 25 of 45 did on the real meeting.
+            return [("", "zh") if c[0] else ("中文內容", "zh") for c in clips]
+
+        def detect_language(self, samples):
+            return "vi" if samples[0] else "zh"
+
+        def transcribe(self, samples, language):
+            return ("Chào các sếp", language)
+
+    clips = [postprocess.Utterance(float(i), np.full(1, 1.0 if i % 10 == 0 else 0.0, dtype="float32"),
+                                   "S39" if i % 10 == 0 else "S13") for i in range(200)]
+    postprocess.transcribe_all(clips, Batched())
+    vi = [u for u in clips if u.speaker == "S39"]
+    assert {(u.lang, u.text) for u in vi} == {("vi", "Chào các sếp")}, {(u.lang, u.text) for u in vi}
+    assert {u.lang for u in clips if u.speaker == "S13"} == {"zh"}
+
+
 def test_clustering_is_judged_by_speech_not_cluster_count() -> None:
     """Two speakers who each hold a real share of the meeting must not be merged.
 
