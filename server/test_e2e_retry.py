@@ -52,6 +52,27 @@ def test_a_failed_decode_is_retried_once_the_speaker_language_is_known(tmp: Path
         st.close()
 
 
+def test_live_drops_the_glossary_prompt_before_holding_a_clip(tmp: Path) -> None:
+    """A clip the prompt silenced is decoded again without it, live, not held and lost."""
+    class PromptLocked(ByLanguage):
+        def transcribe_unbiased(self, samples, language):
+            return "因為這些零件的外觀標準要求特別高", "zh"
+
+    st = store_mod.Store(tmp / "live-unbiased.db")
+    try:
+        session_id = st.start_session("2026-01-01T09:00:00", str(tmp / "u.wav"))
+        pipe = headless_pipeline(config.Config(languages=["zh"]), st, session_id, None, lambda e: None)
+        pipe._transcriber = PromptLocked({"": ("", ""), "zh": ("", "")})
+        pipe._diarizer = OneSpeaker()
+
+        pipe._handle(asr.Segment(np.zeros(16000, dtype="float32"), 1.0))
+
+        assert pipe._retries.held == [], "a clip the unbiased decode recovered was held"
+        assert [l["source"] for l in st.lines(session_id)] == ["因為這些零件的外觀標準要求特別高"]
+    finally:
+        st.close()
+
+
 def test_a_retry_behind_another_speakers_held_clip_does_not_raise(tmp: Path) -> None:
     """list.remove() matches by identity first, so this only bites when someone else's clip is held
     ahead — then it compared the two Segments, i.e. their sample arrays of different lengths, and

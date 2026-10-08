@@ -162,7 +162,11 @@ class Pipeline:
             self._rebias(terms)
 
             forced = self._diarizer.language_for(speaker)
-            text, used = self._transcriber.transcribe(segment.samples, forced)
+            # The same ladder as the post-meeting pass and the per-line re-run: the glossary prompt
+            # can talk the decoder out of a sentence, and live had no way back. A real-time replay
+            # of the 2026-10-05 meeting held 11 clips; 6 came back as real speech without the prompt
+            # (因為這些零件的外觀的標準要求是特別高的…) and every one was lost.
+            text, used = asr_gpu.decode(self._transcriber, segment.samples, forced)
             if not text:
                 # Held rather than dropped. The post-meeting pass recovered 992 real lines this way
                 # across seven interviews — a decode that fails under one language routinely
@@ -212,7 +216,7 @@ class Pipeline:
         Allowed to raise: `Retries` takes the entry off the held list before calling, and counts
         both the failure and the escape.
         """
-        text, used = self._transcriber.transcribe(segment.samples, language)
+        text, used = asr_gpu.decode(self._transcriber, segment.samples, language)
         if not text:
             return False
 
