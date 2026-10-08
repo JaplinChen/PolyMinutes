@@ -141,6 +141,32 @@ def test_llm_stages_do_not_hold_the_gpu_gate(client: TestClient) -> None:
     assert wait_for(lambda: jobs.state(session_id)["state"] in ("refined", "cancelled"))
 
 
+def test_the_next_pass_waits_for_the_previous_followup(client: TestClient) -> None:
+    """Two passes' language-model stages must not overlap: one session summarising with one model
+    while the next translated with another put both on one card, and translations timed out —
+    7 lines on the 2026-10-08 two-session reprocess, two whole sessions in a seven-session batch."""
+    import threading
+
+    jobs.reset()
+    first, second = seed_session("serial-a.wav"), seed_session("serial-b.wav")
+    in_followup, release, second_ran = threading.Event(), threading.Event(), threading.Event()
+
+    def followup(cancel, set_stage):
+        in_followup.set()
+        release.wait(10)
+
+    try:
+        assert jobs.schedule(first, lambda cancel: None, followup=followup)
+        assert wait_for(in_followup.is_set), "followup never started"
+        assert jobs.schedule(second, lambda cancel: second_ran.set())
+        assert not wait_for(second_ran.is_set, 0.8), "the next pass ran during a followup"
+        release.set()
+        assert wait_for(second_ran.is_set, 2.0), "the next pass never ran"
+    finally:
+        release.set()
+        jobs.cancel_all(wait=1.0)
+
+
 def test_a_summarize_only_job_does_not_wait_for_the_gpu(client: TestClient) -> None:
     """Regenerating a summary must not queue behind a meeting recording on another session.
 
