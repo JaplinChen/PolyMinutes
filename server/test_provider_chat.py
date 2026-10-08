@@ -191,6 +191,24 @@ def test_translate_retries_a_malformed_json_reply() -> None:
     assert len(calls) == 3, "retried until it parsed"
 
 
+def test_a_reply_missing_its_last_brace_still_parses() -> None:
+    """The real aya reply logged on 2026-10-08: four objects opened, three closed."""
+    raw = ('{"translations": {"vi": "Vì vậy, kế hoạch ngày 9 tháng 10, chúng tôi mời nhà máy Úc cần chú ý.", '
+           '"en": "So, the plan for October 9th, we invite the Australian factory to be aware."}, '
+           '"previous": {"source": "然後關於BMW訂單 我們上週也已經報告過我們計劃是在10月9號要出1200T", '
+           '"translations": {"vi": "Sau đó, về đơn đặt hàng BMW", "en": "Regarding the BMW order"}}')
+    res = translate.parse_response(raw, ["vi", "en"])
+    assert res.translations["en"].startswith("So, the plan"), res.translations
+    assert res.previous_translations["en"] == "Regarding the BMW order", res
+    # Unbalanced the other way is not a brace that went missing; still an error.
+    raised = False
+    try:
+        translate.parse_response('{"translations": {"en": "x"}}}', ["en"])
+    except ValueError:
+        raised = True
+    assert raised
+
+
 def test_translate_surfaces_a_reply_that_never_parses() -> None:
     """Malformed on every attempt is raised, not swallowed as a silently empty translation."""
     raised = False
