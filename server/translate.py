@@ -176,4 +176,7 @@ class Translator:
                 return parse_response(raw, targets, prev_targets)
             except ValueError as exc:  # JSONDecodeError is a ValueError subclass
                 last = exc
-        raise last
+        # The reply itself, not just the decoder's column: 5 lines of a 2026-10-08 reprocess failed
+        # all three asks with "Expecting ',' delimiter" and none reproduced afterwards, so what the
+        # model actually wrote is the only evidence a tolerant parse could be built from.
+        raise ValueError(f"{last} — last reply: {raw[:800]!r}") from last
