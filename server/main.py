@@ -28,6 +28,21 @@ from .store import Store
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("polyminutes")
 
+
+class _QuietPolls(logging.Filter):
+    """Drop successful GETs of the endpoints the pages poll. The capture page asks for its status
+    twice a second, which pushed the traceback of a failed post-meeting pass out of the log buffer
+    before anyone could read it (2026-10-07). Failures of these same endpoints are still logged."""
+
+    POLLED = ("/api/recording/status", "/refine HTTP")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        return not ('"GET ' in msg and " 200" in msg and any(p in msg for p in self.POLLED))
+
+
+logging.getLogger("uvicorn.access").addFilter(_QuietPolls())
+
 DIST = config.ROOT / "dashboard" / "dist"
 CLIP_SECONDS = 4
 

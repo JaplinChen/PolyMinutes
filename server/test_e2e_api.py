@@ -12,6 +12,20 @@ from fastapi.testclient import TestClient
 from . import config, llm, llm_probe, main, translate
 
 
+def test_poll_requests_stay_out_of_the_access_log(client: TestClient) -> None:
+    import logging
+
+    def kept(msg: str) -> bool:
+        record = logging.LogRecord("uvicorn.access", logging.INFO, "", 0, msg, None, None)
+        return main._QuietPolls().filter(record)
+
+    assert not kept('127.0.0.1:1 - "GET /api/recording/status HTTP/1.1" 200')
+    assert not kept('127.0.0.1:1 - "GET /api/sessions/8/refine HTTP/1.1" 200')
+    assert kept('127.0.0.1:1 - "GET /api/sessions/8/refine HTTP/1.1" 500')
+    assert kept('127.0.0.1:1 - "POST /api/sessions/8/reprocess HTTP/1.1" 200')
+    assert kept('127.0.0.1:1 - "GET /api/sessions/8/lines HTTP/1.1" 200')
+
+
 def test_health_and_config_roundtrip(client: TestClient) -> None:
     health = client.get("/api/health").json()
     assert health["status"] == "ok"
