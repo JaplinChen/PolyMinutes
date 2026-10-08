@@ -195,9 +195,12 @@ def test_translate_surfaces_a_reply_that_never_parses() -> None:
     """Malformed on every attempt is raised, not swallowed as a silently empty translation."""
     raised = False
     try:
-        translate.Translator(lambda p: "never valid").translate(translate.Line("你好", "zh"), ["en"])
-    except ValueError:
+        translate.Translator(lambda p: '{"translations": {"en": "say "hi""}}').translate(
+            translate.Line("你好", "zh"), ["en"])
+    except ValueError as exc:
         raised = True
+        # The reply travels with the error, so the log shows what the model wrote.
+        assert 'say "hi"' in str(exc), exc
     assert raised
 
 
