@@ -14,8 +14,8 @@ is imported, so the replay's lines never reach the room's transcripts.
 from __future__ import annotations
 
 import argparse
+import json
 import os
-import shutil
 import sqlite3
 import sys
 import tempfile
@@ -35,11 +35,18 @@ def main() -> None:
     ap.add_argument("--end", type=float, default=300.0)
     ap.add_argument("--speed", type=float, default=1.0, help="2 = twice real time")
     ap.add_argument("--compare", action="store_true", help="count the post-meeting lines in the window")
+    ap.add_argument("--dump", type=Path, help="write the replayed lines here as JSON")
     args = ap.parse_args()
 
     real_db = ROOT / "polyminutes.db"
+    if not real_db.is_file():
+        sys.exit(f"no database at {real_db} — run from the checkout the server uses")
     copy = Path(tempfile.mkdtemp()) / "replay.db"
-    shutil.copy(real_db, copy)
+    # SQLite's backup, not a file copy: the database runs in WAL mode, so the main file alone can
+    # miss committed pages, and a copy paired with a stale -wal read as "disk image is malformed".
+    with sqlite3.connect(f"file:{real_db.as_posix()}?mode=ro", uri=True) as src, \
+            sqlite3.connect(copy) as dst:
+        src.backup(dst)
     os.environ["POLYMINUTES_DB"] = str(copy)
 
     import soundfile as sf  # noqa: E402
@@ -49,7 +56,10 @@ def main() -> None:
 
     store = Store()
     cfg, llm_cfg = config.load(), llm.load_llm()
-    wav = config.recording_path(store.session(args.session_id)["wav_path"])
+    recorded = store.session(args.session_id)
+    if not recorded:
+        sys.exit(f"session {args.session_id} is not in {real_db}")
+    wav = config.recording_path(recorded["wav_path"])
     audio, _ = sf.read(str(wav), dtype="float32", start=int(args.start * config.SAMPLE_RATE),
                        frames=int((args.end - args.start) * config.SAMPLE_RATE))
     if audio.ndim > 1:
@@ -98,6 +108,9 @@ def main() -> None:
         covered = sum(l["end_time"] - l["start"] for l in lines if l["end_time"])
         print(f"post-meeting in the same window: {n} lines covering {secs:.0f}s; "
               f"live covered {covered:.0f}s")
+    if args.dump:
+        args.dump.write_text(json.dumps(
+            [{**l, "shown": shown.get(l["id"])} for l in lines], ensure_ascii=False), encoding="utf-8")
     store.close()
 
 
