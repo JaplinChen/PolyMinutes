@@ -128,7 +128,17 @@ def parse_response(raw: str, targets: list[str], prev_targets: list[str] | None 
     if not match:
         raise ValueError(f"no JSON object in response: {raw[:200]!r}")
 
-    data = json.loads(match.group(0))
+    body = match.group(0)
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        # aya drops the outermost closing brace now and then: the one real reply captured
+        # (2026-10-08) opened four objects and closed three, and failed at its last character.
+        # The rest of the reply was whole, so the missing braces are put back, nothing else.
+        missing = body.count("{") - body.count("}")
+        if missing <= 0:
+            raise
+        data = json.loads(body + "}" * missing)
     translations = {k: str(v) for k, v in (data.get("translations") or {}).items() if k in targets}
 
     prev = data.get("previous") or {}
