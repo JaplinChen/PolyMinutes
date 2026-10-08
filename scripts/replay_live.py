@@ -16,7 +16,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import shutil
 import sqlite3
 import sys
 import tempfile
@@ -41,7 +40,11 @@ def main() -> None:
 
     real_db = ROOT / "polyminutes.db"
     copy = Path(tempfile.mkdtemp()) / "replay.db"
-    shutil.copy(real_db, copy)
+    # SQLite's backup, not a file copy: the database runs in WAL mode, so the main file alone can
+    # miss committed pages, and a copy paired with a stale -wal read as "disk image is malformed".
+    with sqlite3.connect(f"file:{real_db.as_posix()}?mode=ro", uri=True) as src, \
+            sqlite3.connect(copy) as dst:
+        src.backup(dst)
     os.environ["POLYMINUTES_DB"] = str(copy)
 
     import soundfile as sf  # noqa: E402
