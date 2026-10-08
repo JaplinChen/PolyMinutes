@@ -294,6 +294,17 @@ class Transcriber:
         detected = asr.by_script(text, detected, self._allowed("zh"))
         return asr._post(text, detected), detected
 
+    def detect_language(self, samples: np.ndarray) -> str:
+        """This clip's own language, or "" when it is not one the room speaks.
+
+        The batched decode reports one language for all sixty-four clips it strung together, so a
+        Vietnamese speaker whose turns sat among Mandarin ones was labelled zh on every batch: 45 of
+        45 lines on the 2026-10-05 meeting, while each clip on its own read vi at 0.98. This is the
+        per-clip reading the speaker's language vote needs. One encoder pass, no decoding.
+        """
+        language, _, _ = self._model.detect_language(samples.astype(np.float32))
+        return language if self._allowed(language) else ""
+
     def transcribe(self, samples: np.ndarray, language: str) -> tuple[str, str]:
         segments, info = self._model.transcribe(
             samples.astype(np.float32),
