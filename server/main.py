@@ -83,10 +83,8 @@ def _make_translator() -> translate.Translator | None:
             keys.mark_failure(key, limited=(kind == "limited"))
             log.warning("provider rejected key %s (%s), benching it", llm.mask(key), kind)
 
-    # ponytail: Ollama's chat timeout is 900s (refine.ollama_chat default); on the live path a slow
-    # local model lags subtitles rather than dropping them. Add a shorter live timeout if that bites.
     chat = postmeeting.chat_for(state["llm"], key, max_tokens=1500,
-                                model=state["llm"].translate_model)
+                                model=state["llm"].translate_model, timeout=translate.LIVE_TIMEOUT)
     if chat is None:
         log.warning("no API key configured — transcribing without translation")
         return None

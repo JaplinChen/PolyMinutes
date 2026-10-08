@@ -60,7 +60,8 @@ def main() -> None:
     if audio.ndim > 1:
         audio = audio.mean(axis=1)
     session = store.start_session("2000-01-01T00:00:00", str(wav))
-    chat = postmeeting.chat_for(llm_cfg, "", max_tokens=1500, model=llm_cfg.translate_model)
+    chat = postmeeting.chat_for(llm_cfg, "", max_tokens=1500, model=llm_cfg.translate_model,
+                                timeout=translate.LIVE_TIMEOUT)
 
     shown: dict[int, float] = {}  # line id -> seconds into the replay it first reached the page
     began = 0.0
