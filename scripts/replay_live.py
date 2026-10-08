@@ -14,6 +14,7 @@ is imported, so the replay's lines never reach the room's transcripts.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import sqlite3
@@ -35,6 +36,7 @@ def main() -> None:
     ap.add_argument("--end", type=float, default=300.0)
     ap.add_argument("--speed", type=float, default=1.0, help="2 = twice real time")
     ap.add_argument("--compare", action="store_true", help="count the post-meeting lines in the window")
+    ap.add_argument("--dump", type=Path, help="write the replayed lines here as JSON")
     args = ap.parse_args()
 
     real_db = ROOT / "polyminutes.db"
@@ -97,6 +99,9 @@ def main() -> None:
         covered = sum(l["end_time"] - l["start"] for l in lines if l["end_time"])
         print(f"post-meeting in the same window: {n} lines covering {secs:.0f}s; "
               f"live covered {covered:.0f}s")
+    if args.dump:
+        args.dump.write_text(json.dumps(
+            [{**l, "shown": shown.get(l["id"])} for l in lines], ensure_ascii=False), encoding="utf-8")
     store.close()
 
 
