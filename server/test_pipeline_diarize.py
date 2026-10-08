@@ -99,7 +99,9 @@ def test_a_minority_speaker_is_known_by_each_clip_not_by_the_batch() -> None:
     # transcribe_all records the per-clip reading and re-decodes S39 in his own language.
     class Batched:
         def transcribe_many(self, clips, language):
-            return [("翻成中文的越南話", "zh")] * len(clips)
+            # The Vietnamese clips come back empty: decoded as Chinese, the filter threw them out.
+            # They must still vote by their own language ID — 25 of 45 did on the real meeting.
+            return [("", "zh") if c[0] else ("中文內容", "zh") for c in clips]
 
         def detect_language(self, samples):
             return "vi" if samples[0] else "zh"

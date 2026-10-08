@@ -438,9 +438,9 @@ def dominant_languages(utterances: list[Utterance]) -> dict[str, str]:
     counts: dict[str, dict[str, int]] = {}
     overall: dict[str, int] = {}
     for i, u in enumerate(utterances):
-        # Text-less utterances are dropped noise; their detected language is Whisper guessing at
-        # static and must not vote.
-        if not (u.lang and u.text):
+        # A text-less utterance's batch label is Whisper guessing at static and must not vote. Its
+        # own confident language ID may: the batch emptied it for being decoded in the wrong language.
+        if not (u.lang and u.text) and not u.detected:
             continue
         # A clip's own language ID is an independent reading, so it votes alone. The batch label
         # only stands in where there is none — one vote per batch, as above.
@@ -498,10 +498,11 @@ def transcribe_all(utterances: list[Utterance], transcriber: asr.Transcriber,
             detect = getattr(transcriber, "detect_language", None)
             for u, (text, lang), score in zip(group, decoded, scores):
                 u.text, u.lang, u.decode, u.confidence = text, lang, start, score
-                # Only clips that decoded vote, so only they need reading. Not written to `lang`:
-                # the text was decoded under the batch's language, and leaving `lang` saying so is
-                # what makes the retry below re-decode a clip whose speaker turns out to differ.
-                if detect and text:
+                # Every clip, including ones the batch emptied: a Vietnamese turn decoded as Chinese
+                # is what the hallucination filter empties, and those are the votes that matter.
+                # Not written to `lang`: the text was decoded under the batch's language, and
+                # leaving `lang` saying so is what makes the retry below re-decode the clip.
+                if detect:
                     u.detected = detect(u.samples)
                 done += 1
                 if progress:
