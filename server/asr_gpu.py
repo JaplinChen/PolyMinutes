@@ -291,6 +291,7 @@ class Transcriber:
         if (asr.is_noise(text) or asr.is_hallucination(text) or asr.is_degenerate(text)
                 or not self._allowed(detected)):
             return "", detected
+        detected = asr.by_script(text, detected, self._allowed("zh"))
         return asr._post(text, detected), detected
 
     def transcribe(self, samples: np.ndarray, language: str) -> tuple[str, str]:
