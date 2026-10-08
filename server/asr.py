@@ -353,9 +353,28 @@ class Transcriber:
             if (is_noise(fallback) or is_hallucination(fallback) or is_degenerate(fallback)
                     or not self._allowed(fallback_lang)):
                 return "", fallback_lang
+            fallback_lang = by_script(fallback, fallback_lang, self._allowed("zh"))
             return _post(fallback, fallback_lang), fallback_lang
 
+        detected = by_script(text, detected, self._allowed("zh"))
         return _post(text, detected), detected
+
+
+def by_script(text: str, detected: str, zh_allowed: bool) -> str:
+    """The language the text is written in when it plainly contradicts the detector.
+
+    Turbo's language ID is not trustworthy (live path), and with en in the room's languages it
+    labelled a Mandarin speaker's lines en from the second line on: a real-time replay of the
+    2026-10-05 meeting kept Chinese text under en, so the zh post-processing never ran (a
+    kbppppp… loop reached the subtitles) and the speaker's held clips were retried as English and
+    all eleven lost. Han characters are evidence the detector cannot outvote. Counted per token —
+    one per Han character, one per Latin word — so 然後關於BMW訂單 still reads as Chinese.
+    """
+    if not zh_allowed or detected.startswith("zh"):
+        return detected
+    tokens = _CJK_OR_WORD.findall(text)
+    han = sum(1 for t in tokens if "一" <= t <= "鿿")
+    return "zh" if tokens and han / len(tokens) >= 0.5 else detected
 
 
 def _post(text: str, language: str) -> str:

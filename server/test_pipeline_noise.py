@@ -186,6 +186,16 @@ def test_english_signoffs_and_single_token_collapse() -> None:
     assert not asr.is_degenerate("YAMAHA YAMAHA")
 
 
+def test_han_text_overrides_a_wrong_language_id() -> None:
+    """Live replay of 2026-10-05: Mandarin labelled en, so no folding and every retry lost."""
+    assert asr.by_script("我們目前只有兩個戶櫃還沒有出貨", "en", True) == "zh"
+    assert asr.by_script("然後關於BMW訂單", "vi", True) == "zh"
+    assert asr.by_script("Xin chào các sếp em báo cáo", "vi", True) == "vi"
+    assert asr.by_script("OK.", "en", True) == "en"
+    assert asr.by_script("我們目前只有兩個", "en", False) == "en", "zh not configured for this room"
+    assert asr.by_script("工序 測量 生管 簽約 1.300kb" + "p" * 40, "en", True) == "zh"
+
+
 def test_far_speaker_credits_and_loops() -> None:
     """Lines from a far, unclear speaker on the 2026-10-05 recording."""
     for text in ("中文字幕——YK。", "中文字幕：李宗盛。", "中文字幕，李宗盛。", "中文字幕 李宗盛",
