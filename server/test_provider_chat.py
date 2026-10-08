@@ -79,6 +79,25 @@ def test_chat_for_routes_openai_provider_to_openai_shape():
     assert calls[0].full_url == "https://api.openai.com/v1/chat/completions"
 
 
+def test_the_live_translator_gets_a_short_timeout_and_the_summary_keeps_its_own():
+    """A hung Ollama call sat at the 900 s default and stopped live subtitles for fifteen minutes."""
+    seen: list[float | None] = []
+    real = urllib.request.urlopen
+
+    def fake(req, timeout=None):
+        seen.append(timeout)
+        return _FakeResponse(json.dumps({"message": {"content": "ok"}}).encode())
+
+    cfg = llm.LlmConfig(provider="ollama", model="aya-expanse:8b", endpoint="http://127.0.0.1:11434")
+    urllib.request.urlopen = fake
+    try:
+        postmeeting.chat_for(cfg, "", max_tokens=50, timeout=translate.LIVE_TIMEOUT)("hi")
+        postmeeting.chat_for(cfg, "", max_tokens=50)("hi")
+    finally:
+        urllib.request.urlopen = real
+    assert seen == [translate.LIVE_TIMEOUT, 900], seen
+
+
 def test_chat_for_model_override_picks_a_per_function_model():
     """Per-function split: translation and summary can point at different models; empty falls back
     to the one configured model, so a room that sets neither behaves exactly as before."""
