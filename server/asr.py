@@ -53,7 +53,10 @@ _ANNOTATION = re.compile(r"[\[(（【][^\])）】]*[\])）】]?")
 MAX_DECODE_SECONDS = 25.0
 
 
-@dataclass
+# eq=False: two utterances are never "equal", and the generated __eq__ compared the sample arrays —
+# retry.held.remove() raised "operands could not be broadcast" the moment two clips of different
+# lengths were held, dropping a live line (found by a real-time replay of the 2026-10-05 meeting).
+@dataclass(eq=False)
 class Segment:
     """One utterance cut out by VAD."""
 

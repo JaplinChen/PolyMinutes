@@ -52,6 +52,24 @@ def test_a_failed_decode_is_retried_once_the_speaker_language_is_known(tmp: Path
         st.close()
 
 
+def test_a_retry_behind_another_speakers_held_clip_does_not_raise(tmp: Path) -> None:
+    """list.remove() matches by identity first, so this only bites when someone else's clip is held
+    ahead — then it compared the two Segments, i.e. their sample arrays of different lengths, and
+    raised. Found by a real-time replay of the 2026-10-05 meeting, where it cost a live line."""
+    from types import SimpleNamespace
+
+    other, mine = SimpleNamespace(code="S2"), SimpleNamespace(code="S1")
+    retries = retry_mod.Retries()
+    retries.hold(asr.Segment(np.zeros(24000, dtype="float32"), 1.0), other, "")
+    retries.hold(asr.Segment(np.zeros(16000, dtype="float32"), 2.0), mine, "")
+
+    tried = []
+    retries.retry(mine, "zh", lambda seg, spk, lang: tried.append(seg.start) or True)
+
+    assert tried == [2.0] and retries.recovered == 1
+    assert [h[1].code for h in retries.held] == ["S2"], "the other speaker's clip must stay held"
+
+
 def test_the_retry_buffer_cannot_grow_without_bound(tmp: Path) -> None:
     """Every held utterance keeps its raw audio, so a room that decodes nothing must not fill RAM."""
     st = store_mod.Store(tmp / "retry-cap.db")
