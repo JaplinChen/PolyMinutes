@@ -282,6 +282,10 @@ def test_every_edit_path_moves_the_revision(tmp: Path) -> None:
         st.replace_line(line_id, "重跑結果", "zh", {}, "ok")
         assert st.session(sid)["lines_rev"] == 2
 
+        # A retranslation changes no source text, and the summary reads only source text.
+        st.replace_line(line_id, "重跑結果", "zh", {"en": "rerun result"}, "ok")
+        assert st.session(sid)["lines_rev"] == 2, "a retranslation marked the summary stale"
+
         st.replace_lines(sid, [{"start": 0.0, "speaker": "S1", "lang": "zh",
                                 "source": "精修結果", "translations": {}}])
         assert st.session(sid)["lines_rev"] == 3
