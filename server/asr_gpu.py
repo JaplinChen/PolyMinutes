@@ -49,6 +49,8 @@ def _is_oom(exc: Exception) -> bool:
 # Silence inserted between utterances when they are laid end to end for batching. Every gap is
 # real audio through the encoder, so it stays as short as the boundaries tolerate.
 BATCH_GAP_SECONDS = 0.2
+# Per-clip language ID below this does not vote. Real turns read 0.8-0.99 (2026-10-05 meeting).
+DETECT_MIN_PROBABILITY = 0.7
 # Greedy decoding measurably dropped whole utterances, so this is 5 as that note anticipated.
 # Alternating four runs over 6.7 minutes of a real morning meeting, 47 utterances:
 #
@@ -293,6 +295,20 @@ class Transcriber:
             return "", detected
         detected = asr.by_script(text, detected, self._allowed("zh"))
         return asr._post(text, detected), detected
+
+    def detect_language(self, samples: np.ndarray) -> str:
+        """This clip's own language, or "" when it is not one the room speaks.
+
+        The batched decode reports one language for all sixty-four clips it strung together, so a
+        Vietnamese speaker whose turns sat among Mandarin ones was labelled zh on every batch: 45 of
+        45 lines on the 2026-10-05 meeting, while each clip on its own read vi at 0.98. This is the
+        per-clip reading the speaker's language vote needs. One encoder pass, no decoding.
+        """
+        language, probability, _ = self._model.detect_language(samples.astype(np.float32))
+        # Clips the batch decoded to nothing are read too — a Vietnamese turn decoded as Chinese is
+        # exactly the kind the hallucination filter empties — so a confidence floor keeps static and
+        # crosstalk, which detection is only guessing at, from voting.
+        return language if probability >= DETECT_MIN_PROBABILITY and self._allowed(language) else ""
 
     def transcribe(self, samples: np.ndarray, language: str) -> tuple[str, str]:
         segments, info = self._model.transcribe(

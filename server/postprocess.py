@@ -118,6 +118,9 @@ class Utterance:
     decode: int = -1
     # The decoder's own certainty (asr_gpu.last_confidence), from whichever decode wrote the text.
     confidence: float | None = None
+    # This clip's own language ID, independent of the batch it was decoded in. "" where the
+    # recogniser cannot tell clips apart — then `lang` and `decode` vote as before.
+    detected: str = ""
 
 
 def best_model() -> Path:
@@ -435,16 +438,19 @@ def dominant_languages(utterances: list[Utterance]) -> dict[str, str]:
     counts: dict[str, dict[str, int]] = {}
     overall: dict[str, int] = {}
     for i, u in enumerate(utterances):
-        # Text-less utterances are dropped noise; their detected language is Whisper guessing at
-        # static and must not vote.
-        if not (u.lang and u.text):
+        # A text-less utterance's batch label is Whisper guessing at static and must not vote. Its
+        # own confident language ID may: the batch emptied it for being decoded in the wrong language.
+        if not (u.lang and u.text) and not u.detected:
             continue
-        ballot = (u.speaker, u.lang, u.decode if u.decode >= 0 else ~i)
+        # A clip's own language ID is an independent reading, so it votes alone. The batch label
+        # only stands in where there is none — one vote per batch, as above.
+        lang = u.detected or u.lang
+        ballot = (u.speaker, lang, ~i if u.detected or u.decode < 0 else u.decode)
         if ballot in seen:
             continue
         seen.add(ballot)
-        counts.setdefault(u.speaker, {})[u.lang] = counts.setdefault(u.speaker, {}).get(u.lang, 0) + 1
-        overall[u.lang] = overall.get(u.lang, 0) + 1
+        counts.setdefault(u.speaker, {})[lang] = counts.setdefault(u.speaker, {}).get(lang, 0) + 1
+        overall[lang] = overall.get(lang, 0) + 1
 
     if not overall:
         return {}
@@ -489,8 +495,15 @@ def transcribe_all(utterances: list[Utterance], transcriber: asr.Transcriber,
             scores = getattr(transcriber, "last_confidence", None)
             if not isinstance(scores, list) or len(scores) != len(decoded):
                 scores = [None] * len(decoded)
+            detect = getattr(transcriber, "detect_language", None)
             for u, (text, lang), score in zip(group, decoded, scores):
                 u.text, u.lang, u.decode, u.confidence = text, lang, start, score
+                # Every clip, including ones the batch emptied: a Vietnamese turn decoded as Chinese
+                # is what the hallucination filter empties, and those are the votes that matter.
+                # Not written to `lang`: the text was decoded under the batch's language, and
+                # leaving `lang` saying so is what makes the retry below re-decode the clip.
+                if detect:
+                    u.detected = detect(u.samples)
                 done += 1
                 if progress:
                     progress(u, done, len(utterances))
