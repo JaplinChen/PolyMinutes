@@ -150,18 +150,22 @@ def schedule(session_id: int, run: Callable[[threading.Event], None],
                         return
             elif not _run_gpu_stage():
                 return
-        # The card is free (or was never taken). A meeting can start while the followup is still
-        # talking to a language model, which is the entire point of the split.
-        if followup:
-            try:
-                followup(job.cancel, set_stage)
-            except Cancelled:
-                _finish(job, "cancelled")
-                return
-            except Exception as exc:
-                log.exception("post-meeting followup failed for session %d", session_id)
-                _finish(job, "failed", f"{type(exc).__name__}: {exc}")
-                return
+            # The card is free (or was never taken), so a meeting can start while the followup is
+            # still talking to a language model — the point of the split. The pass gate is still
+            # held: released here, the next queued pass translated with one model while this
+            # followup summarised with another, both resident on one card. Measured 2026-10-08
+            # reprocessing sessions 3 and 7 together: 7 translations failed on the overlapped
+            # session and none on the other, and a 7-pass batch timed out two sessions outright.
+            if followup:
+                try:
+                    followup(job.cancel, set_stage)
+                except Cancelled:
+                    _finish(job, "cancelled")
+                    return
+                except Exception as exc:
+                    log.exception("post-meeting followup failed for session %d", session_id)
+                    _finish(job, "failed", f"{type(exc).__name__}: {exc}")
+                    return
         _finish(job, "refined")
 
     job.thread = threading.Thread(target=worker, name=f"reprocess-{session_id}", daemon=True)
