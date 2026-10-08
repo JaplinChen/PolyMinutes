@@ -280,6 +280,7 @@ class Store(SpeakerStore):
                 # show what changed; a re-run that produced different words replaces the human's
                 # edit entirely, so its trace would be a lie and is dropped. A same-text call
                 # (retranslate) leaves the trace standing.
+                old = self._db.execute("SELECT source, lang FROM line WHERE id=?", (line_id,)).fetchone()
                 self._db.execute(
                     "UPDATE line SET orig_source = CASE"
                     " WHEN ? THEN COALESCE(orig_source, source)"
@@ -299,7 +300,11 @@ class Store(SpeakerStore):
                     "INSERT INTO line_translation (line_id, lang, text) VALUES (?,?,?)",
                     [(line_id, k, v) for k, v in translations.items()],
                 )
-                self._bump_rev_for_line(line_id)
+                # The summary is written from the source text alone, so a retranslation leaves it
+                # current. Bumping anyway flagged six of seven summaries 已過期 after a sweep that
+                # only refilled failed translations (2026-10-08).
+                if not old or (old["source"], old["lang"]) != (source, lang):
+                    self._bump_rev_for_line(line_id)
                 self._db.commit()
             except Exception:
                 self._db.rollback()
