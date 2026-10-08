@@ -150,10 +150,10 @@ def parse_response(raw: str, lines: list[Line], terms: list[Term] | None = None,
 THINK = re.compile(r"<think>.*?</think>", re.DOTALL)
 
 
-def anthropic_chat(api_key: str, model: str, max_tokens: int = 4000):
+def anthropic_chat(api_key: str, model: str, max_tokens: int = 4000, timeout: float | None = None):
     from anthropic import Anthropic
 
-    client = Anthropic(api_key=api_key)
+    client = Anthropic(api_key=api_key) if timeout is None else Anthropic(api_key=api_key, timeout=timeout)
 
     def chat(prompt: str) -> str:
         message = client.messages.create(model=model, max_tokens=max_tokens,

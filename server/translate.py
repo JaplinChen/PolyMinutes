@@ -121,6 +121,12 @@ _JSON = re.compile(r"\{.*\}", re.DOTALL)
 # genuinely stuck line (or a live subtitle) for long.
 PARSE_ATTEMPTS = 3
 
+# Seconds one live translation call may take. Translation runs on the subtitle thread, so a call
+# that hangs stops the subtitles with it: a real-time replay of the 2026-10-05 meeting sat at
+# Ollama's 900 s default and the room would have seen nothing for fifteen minutes. A timeout costs
+# one line its translation (translate_failed, refilled later); the subtitles keep coming.
+LIVE_TIMEOUT = 30.0
+
 
 def parse_response(raw: str, targets: list[str], prev_targets: list[str] | None = None) -> Result:
     """Tolerant parse: models wrap JSON in fences or prose often enough to matter."""
