@@ -29,6 +29,11 @@ def test_live_silence_default_rides_over_breaths() -> None:
     assert config.Config().vad_min_silence == 0.9
 
 
+def test_the_glossary_prompt_stays_off() -> None:
+    """Measured worse with it on (CER 38.3% vs 31.3%, 2026-10-09); see GLOSSARY_PROMPT."""
+    assert asr_gpu.GLOSSARY_PROMPT is False
+
+
 def test_a_decode_that_recites_the_prompt_counts_as_empty() -> None:
     """Real stored lines (2026-10): the hotword list read back in order, not speech."""
     prompt = "交貨 分包 工序 收料 測量 生管 簽約 評估"
