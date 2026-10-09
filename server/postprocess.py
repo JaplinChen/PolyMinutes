@@ -436,6 +436,7 @@ def dominant_languages(utterances: list[Utterance]) -> dict[str, str]:
     # a recogniser that really did read each clip separately keeps every vote it earned.
     seen: set[tuple[str, str, int]] = set()
     counts: dict[str, dict[str, int]] = {}
+    heard: dict[str, dict[str, int]] = {}  # the subset of `counts` read from the clip's own audio
     overall: dict[str, int] = {}
     for i, u in enumerate(utterances):
         # A text-less utterance's batch label is Whisper guessing at static and must not vote. Its
@@ -450,20 +451,27 @@ def dominant_languages(utterances: list[Utterance]) -> dict[str, str]:
             continue
         seen.add(ballot)
         counts.setdefault(u.speaker, {})[lang] = counts.setdefault(u.speaker, {}).get(lang, 0) + 1
+        if u.detected:
+            heard.setdefault(u.speaker, {})[lang] = heard.setdefault(u.speaker, {}).get(lang, 0) + 1
         overall[lang] = overall.get(lang, 0) + 1
 
     if not overall:
         return {}
     meeting = max(overall, key=overall.get)
     floor = sum(overall.values()) * MIN_MINORITY_SHARE
-    return {code: _majority(langs, meeting, floor) for code, langs in counts.items() if langs}
+    return {code: _majority(langs, meeting, floor, heard.get(code, {}))
+            for code, langs in counts.items() if langs}
 
 
-def _majority(langs: dict[str, int], meeting: str, floor: float) -> str:
+def _majority(langs: dict[str, int], meeting: str, floor: float, heard: dict[str, int]) -> str:
     best = max(langs, key=langs.get)
     if sum(langs.values()) < MIN_LANGUAGE_EVIDENCE:
         return meeting
-    if best != meeting and langs[best] < floor:
+    # The share floor exists for batch labels: a hallucinating "speaker" of five Thank-you-for-
+    # watching lines cleared a flat count. It is not for clips that each read confidently as the
+    # language on their own audio — those are a person, however little they said. Two Vietnamese
+    # speakers with 10 and 22 lines (2026-10 meetings) sat under the floor and stayed "Chinese".
+    if best != meeting and langs[best] < floor and heard.get(best, 0) < MIN_LANGUAGE_EVIDENCE:
         return meeting
     return best
 

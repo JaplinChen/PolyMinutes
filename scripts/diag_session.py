@@ -41,11 +41,57 @@ def main() -> None:
     ap.add_argument("--db", type=Path, default=store.DB_PATH)
     ap.add_argument("--fix", action="store_true", help="retranslate translate_failed lines via the API")
     ap.add_argument("--api", default="http://127.0.0.1:8010")
+    ap.add_argument("--lid", action="store_true",
+                    help="re-detect each speaker's language from the audio (loads the GPU model)")
     args = ap.parse_args()
     db = sqlite3.connect(f"file:{args.db.resolve().as_posix()}?mode=ro", uri=True)
     for sid in args.session_ids:
         diagnose(db, sid, args.api if args.fix else None)
+        if args.lid:
+            language_check(db, sid)
         print()
+
+
+_detector = None
+
+
+def language_check(db: sqlite3.Connection, session_id: int, per_speaker: int = 4) -> None:
+    """Each speaker's stored language against what their own longest clips detect as.
+
+    A Vietnamese speaker sat labelled zh for days on the 2026-10-05 meeting: every line faded as
+    low-confidence, every line a stilted Chinese "translation", and the diagnosis kept treating the
+    symptom. Four clips of audio settled it in seconds — so the check is here, run on demand.
+    """
+    global _detector
+    import soundfile as sf
+    from server import asr_gpu, config
+
+    if _detector is None:
+        _detector = asr_gpu.Transcriber(languages=config.load().languages)
+    wav = config.recording_path(db.execute("SELECT wav_path FROM session WHERE id=?",
+                                           (session_id,)).fetchone()[0])
+    speakers = db.execute("SELECT speaker, COUNT(*) FROM line WHERE session_id=? GROUP BY speaker "
+                          "HAVING COUNT(*) >= 5", (session_id,)).fetchall()
+    flagged = 0
+    for speaker, _ in speakers:
+        stored = Counter(r[0] for r in db.execute(
+            "SELECT lang FROM line WHERE session_id=? AND speaker=?", (session_id, speaker)))
+        clips = db.execute("SELECT start, end_time FROM line WHERE session_id=? AND speaker=? "
+                           "AND end_time IS NOT NULL ORDER BY end_time - start DESC LIMIT ?",
+                           (session_id, speaker, per_speaker)).fetchall()
+        heard = Counter()
+        for start, end in clips:
+            audio, _ = sf.read(str(wav), dtype="float32", start=int(start * config.SAMPLE_RATE),
+                               frames=int(min(end - start, 30) * config.SAMPLE_RATE))
+            heard[_detector.detect_language(audio.mean(axis=1) if audio.ndim > 1 else audio)] += 1
+        heard.pop("", None)
+        said, labelled = (heard.most_common(1) or [("", 0)])[0][0], stored.most_common(1)[0][0]
+        # Three confident clips agreeing, not a majority of two: one or two English-sounding clips
+        # in a Mandarin speaker are code-switching, and flagged S4/S8/S26 for nothing.
+        if said and said != labelled and heard[said] >= 3:
+            flagged += 1
+            print(f"  LANGUAGE? {speaker}: stored {dict(stored)}, audio detects {dict(heard)}")
+    print(f"language check: {len(speakers)} speakers, {flagged} flagged")
 
 
 def summary_report(db: sqlite3.Connection, session_id: int) -> None:
