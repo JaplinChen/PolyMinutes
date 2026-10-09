@@ -23,7 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from server import correct, llm, refine  # noqa: E402
+from server import correct, llm, postmeeting, refine  # noqa: E402
 from server.correct import diff_terms  # noqa: E402
 from server.store import Store  # noqa: E402
 
@@ -62,11 +62,11 @@ def main() -> int:
     if args.ollama:
         chat = refine.ollama_chat(args.model or args.ollama, llm.DEFAULT_ENDPOINTS["ollama"], think=True)
     else:
-        key = cfg.api_key
-        if not key:
-            print("no API key; pass --ollama to use a local model", file=sys.stderr)
+        if not cfg.api_key and cfg.provider != "ollama":
+            print(f"no API key for {cfg.provider}; save one on the LLM settings page, or pass --ollama",
+                  file=sys.stderr)
             return 1
-        chat = refine.anthropic_chat(key, args.model or cfg.model)
+        chat = postmeeting.chat_for(cfg, cfg.api_key, max_tokens=4000, model=args.model)
 
     store = Store()
     terms = store.glossary()

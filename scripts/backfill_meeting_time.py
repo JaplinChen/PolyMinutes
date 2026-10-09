@@ -70,6 +70,10 @@ def main() -> int:
         started = meeting_time(hits[0].name)
         if started == row["started"] and started == row["ended"]:
             continue
+        # imports stamp both ends alike; started == the new time is an --apply cut off between its two writes
+        if row["started"] not in (row["ended"], started):
+            print(f"session {row['id']}: live recording, not an import — skipped")
+            continue
         print(f"session {row['id']}: {row['started']} -> {started}  [{hits[0].name}]")
         changed += 1
         if args.apply:

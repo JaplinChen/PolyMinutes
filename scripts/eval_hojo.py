@@ -299,10 +299,11 @@ def main() -> int:
     # to the manifest so re-scoring (fold, bucketing) is instant. --refresh forces a re-decode.
     def decode_cached(tag: str, decode) -> list[str] | None:
         cache = args.manifest.with_suffix(f".hyp_{tag}.json")
-        if cache.exists() and not args.refresh:
+        fresh = cache.exists() and cache.stat().st_mtime >= args.manifest.stat().st_mtime
+        if fresh and not args.refresh:
             print(f"using cached {tag} ({cache.name})")
             return json.loads(cache.read_text(encoding="utf-8"))
-        print(f"decoding {tag} ...")
+        print(f"{'manifest changed since cached ' + tag + '; ' if cache.exists() and not fresh else ''}decoding {tag} ...")
         texts = decode()
         if texts is not None:
             cache.write_text(json.dumps(texts, ensure_ascii=False), encoding="utf-8")

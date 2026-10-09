@@ -3,7 +3,8 @@
     python -m scripts.refine_transcript transcripts/clean/DXC-0721-開發.txt --topic "SAP ERP 導入訪談"
 
 Writes `<name>.refined.txt` next to the input and prints every change, so the pass can be judged
-rather than trusted. The API key comes from llm.json or ANTHROPIC_API_KEY.
+rather than trusted. The provider, key and model come from llm.json (the LLM settings page);
+ANTHROPIC_API_KEY is used only when the provider is anthropic and no key is saved.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from server import llm, refine  # noqa: E402
+from server import llm, postmeeting, refine  # noqa: E402
 from server.store import Store  # noqa: E402
 
 LINE = re.compile(r"^\[(\d+:\d+)\] (S\d+) \((\w+)\) (.*)$")
@@ -44,13 +45,14 @@ def main() -> int:
                                   think=args.think)
         label = f"ollama/{args.model or args.ollama}"
     else:
-        key = os.environ.get("ANTHROPIC_API_KEY") or cfg.api_key
-        if not key:
-            print("no API key: set ANTHROPIC_API_KEY, configure llm.json, or pass --ollama",
-                  file=sys.stderr)
+        key = cfg.api_key or (os.environ.get("ANTHROPIC_API_KEY", "")
+                              if cfg.provider == "anthropic" else "")
+        if not key and cfg.provider != "ollama":
+            print(f"no API key for {cfg.provider}: save one on the LLM settings page, set "
+                  f"ANTHROPIC_API_KEY for anthropic, or pass --ollama", file=sys.stderr)
             return 1
-        chat = refine.anthropic_chat(key, args.model or cfg.model)
-        label = args.model or cfg.model
+        chat = postmeeting.chat_for(cfg, key, max_tokens=4000, model=args.model)
+        label = f"{cfg.provider}/{args.model or cfg.model}"
 
     # A run over seven interviews takes hours, and the reasons it stops are mundane: the machine
     # is needed, a model hangs, someone reboots. Finished transcripts are skipped and the pid is
