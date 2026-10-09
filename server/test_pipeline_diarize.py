@@ -117,6 +117,22 @@ def test_a_minority_speaker_is_known_by_each_clip_not_by_the_batch() -> None:
     assert {u.lang for u in clips if u.speaker == "S13"} == {"zh"}
 
 
+def test_a_quiet_minority_speaker_is_not_flattened_by_the_share_floor() -> None:
+    """Two Vietnamese speakers with 10 and 22 lines sat under MIN_MINORITY_SHARE and stayed zh.
+    Confident per-clip readings clear it; batch labels alone — the hallucinating case — still don't."""
+    def said(speaker, lang, detected="", decode=-1):
+        u = postprocess.Utterance(0.0, np.zeros(1, dtype="float32"), speaker, lang, "x", decode=decode)
+        u.detected = detected
+        return u
+
+    room = [said("S13", "zh", "zh") for _ in range(600)]
+    quiet = [said("S66", "zh", "vi") for _ in range(10)]          # 10 / 610 = 1.6% < 5%
+    ghost = [said("S9", "en", "", decode=100 + i) for i in range(10)]  # batch labels only
+    langs = postprocess.dominant_languages(room + quiet + ghost)
+    assert langs["S66"] == "vi", langs
+    assert langs["S9"] == "zh", "batch-label-only English must still be held to the floor"
+
+
 def test_clustering_is_judged_by_speech_not_cluster_count() -> None:
     """Two speakers who each hold a real share of the meeting must not be merged.
 
