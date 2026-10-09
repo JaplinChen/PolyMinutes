@@ -50,6 +50,14 @@ def _is_oom(exc: Exception) -> bool:
 # Silence inserted between utterances when they are laid end to end for batching. Every gap is
 # real audio through the encoder, so it stays as short as the boundaries tolerate.
 BATCH_GAP_SECONDS = 0.2
+# Whether glossary `hint` terms are fed to the decoder as a prompt. Off: measured 2026-10-09 on the
+# 254 human-labelled clips of the 2026-08-05 meeting, prompt on vs off — CER 38.3% vs 31.3%, the
+# prompt worse on 89 clips and better on 43, term recall 3/3 either way. With it on, the decoder
+# skipped the opening of a clip or wrote a plausible sentence nobody said (「採購人員需要能夠排一個
+# 計畫到Q4的」 for 「主機是不是能夠先過嘛…」), and it caused the empty decodes (#188, #201) and the
+# recited-prompt lines (#208) worked around one at a time. The glossary still corrects the text
+# after decoding (correct.Corrector); only the prompt is gone. Flip to re-measure.
+GLOSSARY_PROMPT = False
 # Per-clip language ID below this does not vote. Real turns read 0.8-0.99 (2026-10-05 meeting).
 DETECT_MIN_PROBABILITY = 0.7
 # Greedy decoding measurably dropped whole utterances, so this is 5 as that note anticipated.
@@ -152,7 +160,7 @@ class Transcriber:
         from faster_whisper import WhisperModel
 
         self._languages = list(languages or [])
-        self._hotwords = hotwords
+        self._hotwords = hotwords if GLOSSARY_PROMPT else ""
         name = str(model or config.gpu_model(self._languages, live=live))
         index = config.gpu_index() if device == "cuda" else 0
         self._model = WhisperModel(name, device=device, device_index=index,
@@ -173,7 +181,7 @@ class Transcriber:
         was baked in when the recogniser was built. Only the prompt text changes here; the weights
         are untouched, so this costs nothing and can run between utterances.
         """
-        self._hotwords = hotwords
+        self._hotwords = hotwords if GLOSSARY_PROMPT else ""
 
     def transcribe_many(self, clips: list[np.ndarray], language: str) -> list[tuple[str, str]]:
         """Decode many utterances in one pass, keeping every boundary.
