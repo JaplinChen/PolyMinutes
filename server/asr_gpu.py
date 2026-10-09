@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -291,7 +292,7 @@ class Transcriber:
 
     def _judge(self, text: str, detected: str) -> tuple[str, str]:
         if (asr.is_noise(text) or asr.is_hallucination(text) or asr.is_degenerate(text)
-                or not self._allowed(detected)):
+                or not self._allowed(detected) or echoes_prompt(text, self._hotwords)):
             return "", detected
         detected = asr.by_script(text, detected, self._allowed("zh"))
         return asr._post(text, detected), detected
@@ -374,6 +375,25 @@ def maybe(languages: list[str], hotwords: str = "", live: bool = False) -> Trans
     except Exception:
         log.exception("GPU transcriber unavailable, falling back to CPU")
         return None
+
+
+def echoes_prompt(text: str, hotwords: str) -> bool:
+    """True when the decode is mostly the glossary prompt read back, not speech.
+
+    On short or unclear audio the decoder recites its prompt: 「分包、工序、測量、簽約、評估」 is
+    the whole hotword list in order, and eight such lines sat in stored transcripts (2026-10).
+    Judged here, at the exit every GPU decode shares, an echo counts as empty — so the batch pass
+    retries it in the speaker's language and `decode` retries it without the prompt, instead of a
+    re-run discarding it afterwards and reporting 未能辨識 (a 0.77 s line on 2026-10-05).
+    """
+    if not hotwords or not text:
+        return False
+    stripped = text
+    for term in hotwords.split():
+        stripped = stripped.replace(term, "")
+    kept = len(re.sub(r"[\s\W]", "", stripped))
+    total = len(re.sub(r"[\s\W]", "", text))
+    return total > 0 and kept / total < 1 / 3
 
 
 def decode(transcriber, samples: np.ndarray, language: str) -> tuple[str, str]:
