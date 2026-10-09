@@ -126,6 +126,18 @@ def diagnose(db: sqlite3.Connection, session_id: int, fix_api: str | None) -> No
     print(f"session {session_id}: {len(lines)} lines")
     print("status:", dict(Counter(l[4] for l in lines)))
     summary_report(db, session_id)
+    # Both kinds were reported by the user before this script saw them (2026-10): a line left as
+    # 未能辨識, and a 0.77 s line too short for a re-run to recover what was said around it. Short
+    # alone is ~25 a meeting of 謝謝大家/請繼續; short *and* unsure is where 採訪/剪輯 credits live.
+    short = db.execute("SELECT COUNT(*) FROM line WHERE session_id=? AND end_time - start < 1.0",
+                       (session_id,)).fetchone()[0]
+    for row in db.execute("SELECT id, start, end_time - start, speaker, status, source FROM line "
+                          "WHERE session_id=? AND (status='asr_failed' OR "
+                          "(end_time - start < 1.0 AND confidence < ?)) ORDER BY start",
+                          (session_id, LOW_CONFIDENCE)):
+        kind = "asr_failed" if row[4] == "asr_failed" else f"short+unsure {row[2]:.2f}s"
+        print(f"  {kind} #{row[0]} at {int(row[1]) // 60}:{int(row[1]) % 60:02d} {row[3]}: {row[5][:30]!r}")
+    print(f"lines under 1 s: {short}")
     failed = [l for l in lines if l[4] == "translate_failed"]
     for l in failed[:10]:
         print(f"  translate_failed #{l[0]}: {l[3][:50]}")
