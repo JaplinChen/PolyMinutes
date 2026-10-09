@@ -117,7 +117,8 @@ class Pipeline:
     def _vad_for(self, source: str) -> asr.Vad:
         vad = self._vad.get(source)
         if vad is None:
-            vad = self._vad[source] = asr.Vad(min_silence=self._cfg.vad_min_silence)
+            vad = self._vad[source] = asr.Vad(min_silence=self._cfg.vad_min_silence,
+                                              max_speech=self._cfg.vad_max_speech)
         return vad
 
     def _run(self) -> None:

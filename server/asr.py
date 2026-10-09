@@ -177,7 +177,7 @@ class Vad:
     """Streaming VAD. Feed capture blocks, take completed utterances out."""
 
     def __init__(self, model: Path | None = None, buffer_seconds: int = 60,
-                 min_speech: float = 0.25, min_silence: float = 0.5):
+                 min_speech: float = 0.25, min_silence: float = 0.5, max_speech: float = 20.0):
         """`min_speech` is a parameter because the two callers want different answers.
 
         Live capture wants everything: 「好」「對」「收到」 land under a second and belong on the
@@ -189,6 +189,9 @@ class Vad:
         speaker pauses mid-thought varies by person and room. Too short cuts a breath into two
         half-sentences — the first arrives at Whisper as a fragment that collapses into filler —
         so the live pipeline runs it higher than this default. See vad_min_silence in config.
+
+        `max_speech` forces a cut so one monologue cannot stall the pipeline, and it is also how
+        long the room waits for a speaker's first subtitle. See vad_max_speech in config.
         """
         cfg = sherpa_onnx.VadModelConfig()
         cfg.silero_vad.model = str(model or config.VAD_MODEL)
@@ -196,7 +199,7 @@ class Vad:
         cfg.silero_vad.min_silence_duration = min_silence
         cfg.silero_vad.min_speech_duration = min_speech
         self.min_silence = min_silence
-        cfg.silero_vad.max_speech_duration = 20.0  # force a cut so one monologue can't stall the pipeline
+        cfg.silero_vad.max_speech_duration = max_speech
         cfg.sample_rate = config.SAMPLE_RATE
         self._vad = sherpa_onnx.VoiceActivityDetector(cfg, buffer_size_in_seconds=buffer_seconds)
         self._consumed = 0

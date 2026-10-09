@@ -165,6 +165,12 @@ class Config:
     # thinking pauses often enough that the post-meeting pass grew a merge stage. 0.9 rides over
     # those too, at the cost of subtitles arriving a beat later. Tune per room.
     vad_min_silence: float = 0.9
+    # Longest live utterance (seconds) before VAD forces a cut — and so how long a speaker talks
+    # before their first subtitle appears. A/B 2026-10-09, three 7-minute windows replayed in real
+    # time, two runs each (identical): 20 s first subtitle 18.2 s / CER 28.7%, 12 s 15.2 s / 29.6%,
+    # 8 s 11.3 s / 30.3% but one window +7.9 pts. 12 s: no window clearly worse. The post-meeting
+    # pass keeps 20 s; it merges runs afterwards anyway.
+    vad_max_speech: float = 12.0
     # Speaker code -> language code. Pins a speaker so detection never overrides it.
     pinned_languages: dict[str, str] = field(default_factory=dict)
     display: Display = field(default_factory=Display)
