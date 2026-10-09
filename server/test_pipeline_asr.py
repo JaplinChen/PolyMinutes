@@ -29,6 +29,14 @@ def test_live_silence_default_rides_over_breaths() -> None:
     assert config.Config().vad_min_silence == 0.9
 
 
+def test_live_utterances_are_capped_at_twelve_seconds() -> None:
+    """The A/B behind it is in config; locked so the live cut and the post-meeting one stay apart."""
+    import inspect
+
+    assert config.Config().vad_max_speech == 12.0
+    assert inspect.signature(asr.Vad).parameters["max_speech"].default == 20.0, "post-meeting keeps 20 s"
+
+
 class _Seg:
     def __init__(self, text: str, no_speech_prob: float):
         self.text, self.no_speech_prob, self.start, self.end = text, no_speech_prob, 0.0, 1.0
