@@ -29,6 +29,17 @@ def test_live_silence_default_rides_over_breaths() -> None:
     assert config.Config().vad_min_silence == 0.9
 
 
+def test_a_decode_that_recites_the_prompt_counts_as_empty() -> None:
+    """Real stored lines (2026-10): the hotword list read back in order, not speech."""
+    prompt = "交貨 分包 工序 收料 測量 生管 簽約 評估"
+    for text in ("分包、工序、測量、簽約、評估。", "工序分包，工序分包。", "分包工序", "交貨。"):
+        assert asr_gpu.echoes_prompt(text, prompt), text
+    # A sentence that merely uses a term is speech.
+    for text in ("這批要分包給外面的廠商做", "工序的部分我們下週再評估一次", "這個是泡泡機嗎"):
+        assert not asr_gpu.echoes_prompt(text, prompt), text
+    assert not asr_gpu.echoes_prompt("分包工序", ""), "no prompt, nothing to echo"
+
+
 def test_live_utterances_are_capped_at_twelve_seconds() -> None:
     """The A/B behind it is in config; locked so the live cut and the post-meeting one stay apart."""
     import inspect
