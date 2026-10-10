@@ -229,6 +229,10 @@
   display: none;
 }
 
+.mobile-header-spacer {
+  width: 40px;
+}
+
 .sidebar-overlay {
   display: none;
 }

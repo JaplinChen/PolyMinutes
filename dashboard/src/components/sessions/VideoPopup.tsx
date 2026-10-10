@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, ChevronUp, GripHorizontal, PictureInPicture2 } from 'lucide-react';
 import { useToast } from '../Toast';
+import { readStorage, writeStorage } from '../../utils/storage';
 import './VideoPopup.css';
 
 // Where the user left the window: position, size and whether it was collapsed. One key, because
@@ -16,7 +17,7 @@ type Box = { x: number; y: number; w: number; h: number; open: boolean };
 
 function stored(): Partial<Box> {
   try {
-    return JSON.parse(localStorage.getItem(STORE) || '{}');
+    return JSON.parse(readStorage(STORE) || '{}');
   } catch {
     return {};
   }
@@ -64,7 +65,7 @@ export function VideoPopup({ src, videoRef, onPause, onTimeUpdate }: Props) {
     const box: Box = {
       x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: height, open, ...extra,
     };
-    localStorage.setItem(STORE, JSON.stringify(box));
+    writeStorage(STORE, JSON.stringify(box));
   };
 
   // Position and size live on the element, not in state: the user drags the element itself, and a

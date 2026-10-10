@@ -6,6 +6,7 @@ import { PageSkeleton } from '../components/PageSkeleton';
 import { useToast } from '../components/Toast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { appApi, type GlossaryTerm } from '../services/app.api';
+import { isSubmitEnter } from '../utils/ime';
 import './Glossary.css';
 
 const MODES = ['translate', 'keep', 'hint', 'protect'] as const;
@@ -119,7 +120,7 @@ export function Glossary() {
               className="gloss-input"
               value={draft.source}
               onChange={e => { setDraft({ ...draft, source: e.target.value }); setClash([]); }}
-              onKeyDown={e => e.key === 'Enter' && !busy && add()}
+              onKeyDown={e => isSubmitEnter(e) && !busy && add()}
             />
           </label>
           <label className="gloss-field gloss-field-mode">

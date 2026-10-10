@@ -13,12 +13,18 @@ interface Props {
 export function PendingRuleDialog({ rule, onLearn, onSkip }: Props) {
   const { t } = useTranslation();
   const skipRef = useRef<HTMLButtonElement>(null);
+  const learnRef = useRef<HTMLButtonElement>(null);
 
   // Focus lands on skip: the dialog opens right after Enter saved the line, and a second Enter out
   // of habit must not teach a rule that rewrites every other line.
   useEffect(() => {
     skipRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onSkip(); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { onSkip(); return; }
+      if (e.key !== 'Tab') return;
+      e.preventDefault();
+      (document.activeElement === skipRef.current ? learnRef : skipRef).current?.focus();
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [rule, onSkip]);
@@ -37,7 +43,7 @@ export function PendingRuleDialog({ rule, onLearn, onSkip }: Props) {
           <button type="button" className="prule-skip" ref={skipRef} onClick={onSkip}>
             {t('sessions.pendingRuleSkip')}
           </button>
-          <button type="button" className="prule-learn" onClick={onLearn}>
+          <button type="button" className="prule-learn" ref={learnRef} onClick={onLearn}>
             {t('sessions.pendingRuleLearn')}
           </button>
         </div>

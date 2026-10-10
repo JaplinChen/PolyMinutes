@@ -6,6 +6,7 @@ import { resolveSupportedLanguage, rtlLanguages } from '../i18n';
 import { healthApi } from '../services/api';
 import { LanguageMenu } from './LanguageMenu';
 import { AppearanceMenu } from './AppearanceMenu';
+import { readStorage, writeStorage } from '../utils/storage';
 import './Layout.css';
 
 const navItems = [
@@ -21,6 +22,7 @@ export function Layout() {
   const { t, i18n } = useTranslation();
   const { pathname } = useLocation();
   const mainRef = useRef<HTMLElement>(null);
+  const menuBtnRef = useRef<HTMLButtonElement>(null);
 
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
@@ -66,7 +68,18 @@ export function Layout() {
   }, [isMobileOpen]);
 
   useEffect(() => {
-    const saved = parseInt(localStorage.getItem('sidebarWidth') || '', 10);
+    if (!isMobileOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      setIsMobileOpen(false);
+      menuBtnRef.current?.focus();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isMobileOpen]);
+
+  useEffect(() => {
+    const saved = parseInt(readStorage('sidebarWidth') || '', 10);
     if (saved >= 180 && saved <= 480) document.documentElement.style.setProperty('--sidebar-w', `${saved}px`);
   }, []);
 
@@ -85,17 +98,19 @@ export function Layout() {
     };
     const onUp = () => {
       document.body.classList.remove('sidebar-resizing');
-      localStorage.setItem(
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      writeStorage(
         'sidebarWidth',
         String(parseInt(document.documentElement.style.getPropertyValue('--sidebar-w'), 10) || 260)
       );
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
   };
 
+  // The drawer always shows labels; desktop collapse has no expand control on mobile.
+  const collapsed = isCollapsed && !isMobile;
   const toggleCollapse = () => setIsCollapsed(!isCollapsed);
   const toggleMobile = () => setIsMobileOpen(!isMobileOpen);
 
@@ -106,25 +121,33 @@ export function Layout() {
     <div className="layout">
       {isMobile && (
         <header className="mobile-header">
-          <button className="mobile-menu-btn" onClick={toggleMobile} aria-label={t('common.expand')}>
+          <button
+            ref={menuBtnRef}
+            className="mobile-menu-btn"
+            onClick={toggleMobile}
+            aria-label={isMobileOpen ? t('common.close') : t('common.expand')}
+            title={isMobileOpen ? t('common.close') : t('common.expand')}
+            aria-expanded={isMobileOpen}
+          >
             {isMobileOpen ? <X size={24} /> : <Menu size={24} />}
           </button>
           <div className="mobile-brand">
             <img src="/favicon.svg" alt="PolyMinutes" className="sidebar-logo" />
             <span className="brand-name">{t('common.appName')}</span>
           </div>
-          <div style={{ width: 40 }} />
+          <div className="mobile-header-spacer" />
         </header>
       )}
 
       {isMobile && isMobileOpen && <div className="sidebar-overlay" onClick={() => setIsMobileOpen(false)} />}
 
       <aside
-        className={`sidebar ${isCollapsed ? 'collapsed' : ''} ${isMobile ? 'mobile' : ''} ${isMobileOpen ? 'open' : ''}`}
+        className={`sidebar ${collapsed ? 'collapsed' : ''} ${isMobile ? 'mobile' : ''} ${isMobileOpen ? 'open' : ''}`}
+        inert={isMobile && !isMobileOpen}
       >
         <div className="sidebar-header">
           <img src="/favicon.svg" alt="PolyMinutes" className="sidebar-logo" />
-          {!isCollapsed && (
+          {!collapsed && (
             <div className="sidebar-brand">
               <span className="brand-name">{t('common.appName')}</span>
               <span className="brand-version">v{version}</span>
@@ -132,16 +155,16 @@ export function Layout() {
           )}
         </div>
 
-        {!isMobile && !isCollapsed && <div className="sidebar-resizer" onMouseDown={startResize} />}
+        {!isMobile && !collapsed && <div className="sidebar-resizer" onMouseDown={startResize} />}
 
         {!isMobile && (
           <button
             className="collapse-toggle"
             onClick={toggleCollapse}
-            title={isCollapsed ? t('common.expand') : t('common.collapse')}
-            aria-label={isCollapsed ? t('common.expand') : t('common.collapse')}
+            title={collapsed ? t('common.expand') : t('common.collapse')}
+            aria-label={collapsed ? t('common.expand') : t('common.collapse')}
           >
-            {isCollapsed ? (
+            {collapsed ? (
               isRtl ? (
                 <ChevronLeft size={16} />
               ) : (
@@ -165,10 +188,10 @@ export function Layout() {
                 className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
                 end={to === '/'}
                 onClick={handleNavClick}
-                title={isCollapsed ? label : undefined}
+                title={collapsed ? label : undefined}
               >
                 <Icon size={20} />
-                {!isCollapsed && <span>{label}</span>}
+                {!collapsed && <span>{label}</span>}
               </NavLink>
             );
           })}
@@ -180,7 +203,7 @@ export function Layout() {
         </div>
       </aside>
 
-      <main ref={mainRef} className={`main-content ${isCollapsed ? 'expanded' : ''} ${isMobile ? 'mobile' : ''}`}>
+      <main ref={mainRef} className={`main-content ${collapsed ? 'expanded' : ''} ${isMobile ? 'mobile' : ''}`}>
         <Outlet />
       </main>
     </div>

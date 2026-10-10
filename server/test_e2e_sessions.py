@@ -34,6 +34,26 @@ def test_websocket_receives_config_and_events(client: TestClient) -> None:
         assert ws.receive_json()["line"]["id"] == 1
 
 
+def test_websocket_announces_the_session(client: TestClient) -> None:
+    """/live keys lines by start time within a meeting, so it must learn when the meeting changes."""
+    with client.websocket_connect("/ws/live") as ws:
+        first = ws.receive_json()
+        assert "sessionId" in first and first["sessionId"] is None
+        threading.Thread(target=lambda: main.hub.publish({"type": "session", "sessionId": 7})).start()
+        assert ws.receive_json() == {"type": "session", "sessionId": 7}
+
+
+def test_idle_websocket_is_pinged(client: TestClient) -> None:
+    from . import routes_capture
+    saved, routes_capture.PING_SECONDS = routes_capture.PING_SECONDS, 0.2
+    try:
+        with client.websocket_connect("/ws/live") as ws:
+            assert ws.receive_json()["type"] == "config"
+            assert ws.receive_json() == {"type": "ping"}
+    finally:
+        routes_capture.PING_SECONDS = saved
+
+
 def test_known_voice_can_be_heard_and_renamed(client: TestClient) -> None:
     """A learned voice is only inspectable if you can play it back and fix the name on it."""
     import soundfile as sf
@@ -67,6 +87,42 @@ def test_known_voice_can_be_heard_and_renamed(client: TestClient) -> None:
                       params={"session": session}).status_code == 404
 
     assert client.delete("/api/speakers/known/Ana%20Lee").json() == []
+
+
+def test_slash_names_reach_their_routes(client: TestClient) -> None:
+    """The dashboard sends '/' as %2F, which Starlette decodes before routing; a plain {name} 404'd."""
+    import soundfile as sf
+
+    wav = config.RECORDINGS_DIR / "slash-voice.wav"
+    wav.parent.mkdir(parents=True, exist_ok=True)
+    sf.write(str(wav), np.zeros(config.SAMPLE_RATE * 10, dtype="float32"), config.SAMPLE_RATE)
+    session = main.store.start_session("now", str(wav))
+    main.store.add_line(session, 1.0, "S1", "en", "hello there", {}, end_time=6.0)
+    main.store.save_voiceprint(session, "S1", b"\x00" * 8)
+    assert client.put(f"/api/sessions/{session}/speakers", json={"S1": "A/B"}).status_code == 200
+
+    def entry(name: str) -> dict:
+        return next(s for s in client.get("/api/speakers/known").json() if s["name"] == name)
+
+    # Each suffix route must still win over the greedy rename/delete catch-alls.
+    lang = config.load().languages[0]
+    assert client.put("/api/speakers/known/A%2FB/language", json={"language": lang}).status_code == 200
+    assert entry("A/B")["language"] == lang
+    assert client.put("/api/speakers/known/A%2FB/department", json={"department": "R&D"}).status_code == 200
+    assert entry("A/B")["department"] == "R&D"
+    clip = client.get("/api/speakers/known/A%2FB/clip", params={"session": session})
+    assert clip.status_code == 200 and clip.headers["content-type"] == "audio/wav"
+
+    renamed = client.put("/api/speakers/known/A%2FB", json={"name": "C/D"}).json()
+    assert "C/D" in [s["name"] for s in renamed] and "A/B" not in [s["name"] for s in renamed]
+    assert client.delete("/api/speakers/known/C%2FD").status_code == 200
+    assert all(s["name"] != "C/D" for s in client.get("/api/speakers/known").json())
+
+    main.store.add_correction("x/y", "z")
+    fixed = client.put("/api/corrections/x%2Fy", json={"right": "w"})
+    assert fixed.status_code == 200 and {"x/y": "w"}.items() <= {c["wrong"]: c["right"] for c in fixed.json()}.items()
+    client.delete("/api/corrections/x%2Fy")
+    assert all(c["wrong"] != "x/y" for c in client.get("/api/corrections").json())
 
 
 def test_an_identified_voice_survives_its_meetings_deletion(client: TestClient) -> None:

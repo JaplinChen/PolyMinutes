@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { Captions, Download, FileText, Link as LinkIcon, RefreshCw, Search, Trash2, Upload, Volume2 } from 'lucide-react';
@@ -13,6 +13,7 @@ import { appApi, type CitedItem, type MeetingSummary, type PendingRule, type Ref
 import { API_BASE_URL, NO_SUCH_ENDPOINT } from '../services/http';
 import { editingLocked } from '../services/sessionSummary';
 import './Sessions.css';
+import { isSubmitEnter } from '../utils/ime';
 import './Sessions.refine.css';
 import './Sessions.summary.css';
 
@@ -50,12 +51,26 @@ export function Sessions() {
 
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
+  // Async work finishes after the user may have picked another meeting; each response is dropped
+  // unless the session it was issued for is still the selected one.
+  const selectedRef = useRef(selected);
+  // Layout effect, not render: no promise continuation can run between commit and this update.
+  useLayoutEffect(() => { selectedRef.current = selected; }, [selected]);
   const [lines, setLines] = useState<TranscriptLine[]>([]);
   const [names, setNames] = useState<Record<string, string>>({});
+  // What the server last said the names are. `names` also holds half-typed input, so a blur has to
+  // compare against this to know whether anything was actually changed.
+  const savedNames = useRef<Record<string, string>>({});
+  // Which session `names` belongs to; until the new meeting's names arrive, edits must not PUT the old one's.
+  const namesSession = useRef<number | null>(null);
+  const applyNames = (n: Record<string, string>) => { savedNames.current = n; namesSession.current = selectedRef.current; setNames(n); };
   // Codes ticked on the speaker page to fold into one person — the diariser splits a drifting voice.
   const [mergeSel, setMergeSel] = useState<Set<string>>(new Set());
   // Who each unnamed code sounds most like — the hint the naming screen never had.
-  const [suggestions, setSuggestions] = useState<Record<string, SpeakerSuggestion>>({});
+  // Tagged with the meeting they were fetched for: the previous meeting's hints must not offer its
+  // names on this one's codes, where one click would teach a voiceprint the wrong person.
+  const [speakerSugg, setSpeakerSugg] = useState<{ session: number | null; map: Record<string, SpeakerSuggestion> }>({ session: null, map: {} });
+  const suggestions: Record<string, SpeakerSuggestion> = speakerSugg.session === selected ? speakerSugg.map : {};
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<{ id: number; text: string } | null>(null);
   const [importing, setImporting] = useState(false);
@@ -106,11 +121,13 @@ export function Sessions() {
     appApi
       .sessionLines(id)
       .then(r => {
+        if (selectedRef.current !== id) return;
         setLines(r.lines);
-        setNames(r.speakers);
+        applyNames(r.speakers);
         setMergeSel(new Set());
       })
       .catch(fail);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const [params, setParams] = useSearchParams();
@@ -150,7 +167,9 @@ export function Sessions() {
   }, [params, sessions]);
 
   const loadSummary = useCallback((id: number) => {
-    appApi.sessionSummary(id).then(setSummary).catch(() => setSummary(null));
+    appApi.sessionSummary(id)
+      .then(r => { if (selectedRef.current === id) setSummary(r); })
+      .catch(() => { if (selectedRef.current === id) setSummary(null); });
   }, []);
 
   // Follow a summary item's citation to its transcript line: switch tabs and let the scroll effect
@@ -181,7 +200,7 @@ export function Sessions() {
   // Silent on failure: an older backend without the progress fields still answers, and one without
   // the route at all should degrade to the bare state chip rather than a toast per poll.
   const loadJob = useCallback((id: number) => {
-    appApi.refineJob(id).then(setJob).catch(() => {});
+    appApi.refineJob(id).then(r => { if (selectedRef.current === id) setJob(r); }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -196,8 +215,13 @@ export function Sessions() {
   // Refetched whenever the transcript changes: a merge or a reprocess redraws the codes, and a
   // suggestion for a code that no longer exists is worse than none.
   useEffect(() => {
-    if (selected === null) { setSuggestions({}); return; }
-    appApi.speakerSuggestions(selected).then(setSuggestions).catch(() => setSuggestions({}));
+    if (selected === null) return;
+    const id = selected;
+    let stale = false;
+    appApi.speakerSuggestions(id)
+      .then(r => { if (!stale) setSpeakerSugg({ session: id, map: r }); })
+      .catch(() => { if (!stale) setSpeakerSugg({ session: id, map: {} }); });
+    return () => { stale = true; };
   }, [selected, lines]);
 
   // Once the lines for a cited session are on screen, scroll the cited one into view and flash it,
@@ -226,25 +250,41 @@ export function Sessions() {
   }, [selected, loadSummary]);
 
   // Poll while anything is running that this page must notice finishing: the refine pass (state on
-  // the session) or a summarize-only regeneration (state on the summary). Watching refine alone
-  // meant a summary-only job — which never turns refine to "refining" — ran to completion with the
-  // page never re-fetching, so the finished summary simply never appeared until a manual reload.
-  const summaryGenerating = summary?.state === 'generating';
+  // the session) or a summarize-only regeneration (state on the summary).
+  // The summary still on screen right after a switch belongs to the previous meeting; it must not
+  // make the new one look like it is running.
+  const summaryState = summary?.session === selected ? summary?.state : undefined;
+  const summaryGenerating = summaryState === 'generating';
   const jobRunning = refine === 'refining' || summaryGenerating;
   const wasRunning = useRef(false);
   const runStartedAt = useRef<number | null>(null);
+  const runSession = useRef<number | null>(null);
   useEffect(() => {
     if (!jobRunning) {
-      if (wasRunning.current && selected !== null) {
+      if (wasRunning.current) {
         wasRunning.current = false;
-        toast.success(t('sessions.refineDone'));
+        const startedFor = runSession.current;
+        const startedAt = runStartedAt.current;
+        runSession.current = null;
+        runStartedAt.current = null;
+        // The user moved on while it ran: the meeting now on screen loads itself, and a toast about
+        // another meeting would read as news about this one.
+        if (selected === null || startedFor !== selected) return;
+        // A summarize-only job also reports refine 'refining', but its failure shows only on the summary.
+        const refineFailed = refine === 'failed';
+        const summaryFailed = !refineFailed && refine !== 'cancelled' && summaryState === 'failed';
+        const didFail = refineFailed || summaryFailed;
+        const failText = summaryFailed
+          ? t('sessions.summaryFailed')
+          : refineError ? t('sessions.refineFailedReason', { reason: refineError }) : t('sessions.refineFailed');
+        if (didFail) toast.error(failText);
+        else if (refine !== 'cancelled') toast.success(t('sessions.refineDone'));
         // One OS notification for a long pass the user walked away from — the single out-of-app
         // channel, deliberately not Teams/Slack/email. Gated on both a long run and a hidden tab so
         // a quick refine never pings, and silent if they never granted permission.
-        const ranLong = runStartedAt.current !== null && Date.now() - runStartedAt.current > LONG_FLOW_MS;
-        runStartedAt.current = null;
-        if (ranLong && document.hidden && 'Notification' in window && Notification.permission === 'granted') {
-          new Notification(t('sessions.notifyTitle'), { body: t('sessions.refineDone') });
+        const ranLong = startedAt !== null && Date.now() - startedAt > LONG_FLOW_MS;
+        if (refine !== 'cancelled' && ranLong && document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+          new Notification(t('sessions.notifyTitle'), { body: didFail ? failText : t('sessions.refineDone') });
         }
         loadLines(selected);
         // Both a refine pass and a summarize job end by writing the summary; either way the card is
@@ -255,9 +295,11 @@ export function Sessions() {
       }
       return;
     }
-    if (!wasRunning.current) {
-      // The pass just started. Stamp the start for the duration gate, and ask for notification
-      // permission now — by the time an hour-long reprocess finishes the answer is long settled.
+    if (!wasRunning.current || runSession.current !== selected) {
+      // The pass just started (or the user moved to a different running meeting). Stamp the start for
+      // the duration gate, and ask for notification permission now — by the time an hour-long
+      // reprocess finishes the answer is long settled.
+      runSession.current = selected;
       runStartedAt.current = Date.now();
       if ('Notification' in window && Notification.permission === 'default') {
         Notification.requestPermission().catch(() => {});
@@ -275,7 +317,7 @@ export function Sessions() {
       }
     }, REFINE_POLL_MS);
     return () => window.clearInterval(timer);
-  }, [jobRunning, selected, loadLines, loadSummary, loadJob, toast, t]);
+  }, [jobRunning, selected, refine, refineError, summaryState, loadLines, loadSummary, loadJob, toast, t]);
 
   // Regenerates the summary alone — no ASR, no GPU. The job registry the refine poll watches
   // dedups it, so refreshing the sessions list is what starts the poll that notices it finish.
@@ -283,7 +325,8 @@ export function Sessions() {
     if (selected === null || summarizing) return;
     setSummarizing(true);
     try {
-      setSummary(await appApi.summarizeSession(selected));
+      const r = await appApi.summarizeSession(selected);
+      if (selectedRef.current === selected) setSummary(r);
       setSessions(await appApi.sessions());
     } catch (err) {
       fail(err);
@@ -318,9 +361,12 @@ export function Sessions() {
   // Speakers are identified by voice, not by name — the app never sees the participant list.
   // Naming them once here is what turns S1/S2 into a readable transcript.
   const saveName = async (code: string, name: string) => {
-    if (selected === null) return;
+    // A blur without an edit must not PUT: the server relearns the name against that voiceprint.
+    // The server strips whitespace; namesSession guards the window after a switch before the new names load.
+    if (selected === null || namesSession.current !== selected || name.trim() === (savedNames.current[code] ?? '')) return;
     try {
-      setNames(await appApi.setSpeakerNames(selected, { [code]: name }));
+      const r = await appApi.setSpeakerNames(selected, { [code]: name });
+      if (selectedRef.current === selected) applyNames(r);
     } catch (err) {
       fail(err);
     }
@@ -336,8 +382,10 @@ export function Sessions() {
     if (selected === null || source.trim() === previous || !source.trim()) return;
     try {
       const r = await appApi.setLineSource(selected, lineId, source.trim());
-      setLines(r.lines);
+      // Rules are global, not per meeting: keep the dialog even if the user has switched away.
       if (r.pending_rules?.length) setPendingRules(r.pending_rules);
+      if (selectedRef.current !== selected) return;
+      setLines(r.lines);
     } catch (err) {
       fail(err);
     }
@@ -367,8 +415,9 @@ export function Sessions() {
     if (selected === null) return;
     try {
       const r = await appApi.setLineSpeaker(selected, lineId, speaker);
+      if (selectedRef.current !== selected) return;
       setLines(r.lines);
-      setNames(r.speakers);
+      applyNames(r.speakers);
     } catch (err) {
       fail(err);
     }
@@ -521,8 +570,10 @@ export function Sessions() {
     setRerunning(lineId);
     try {
       const r = await appApi.rerunLine(selected, lineId);
-      setLines(r.lines);
-      setNames(r.speakers);
+      if (selectedRef.current === selected) {
+        setLines(r.lines);
+        applyNames(r.speakers);
+      }
       if (r.status !== 'ok') toast.error(t(`sessions.${r.status === 'asr_failed' ? 'lineFailedAsr' : 'lineFailedTranslate'}`));
     } catch (err) {
       fail(err);
@@ -541,8 +592,10 @@ export function Sessions() {
     setRerunning(lineId);
     try {
       const r = await appApi.retranslateLine(selected, lineId);
-      setLines(r.lines);
-      setNames(r.speakers);
+      if (selectedRef.current === selected) {
+        setLines(r.lines);
+        applyNames(r.speakers);
+      }
       if (r.status !== 'ok') toast.error(t('sessions.lineFailedTranslate'));
     } catch (err) {
       fail(err);
@@ -595,12 +648,14 @@ export function Sessions() {
     return sel.find(c => (names[c] ?? '').trim()) ?? sel[0];
   }, [codes, mergeSel, names]);
   const mergeSelected = async () => {
-    if (selected === null || !mergeTarget || mergeSel.size < 2) return;
+    // A merge cannot be undone: refuse it in the window after a switch, before this meeting's codes load.
+    if (selected === null || namesSession.current !== selected || !mergeTarget || mergeSel.size < 2) return;
     const from = codes.filter(c => mergeSel.has(c) && c !== mergeTarget);
     try {
       const r = await appApi.mergeSpeakers(selected, mergeTarget, from);
+      if (selectedRef.current !== selected) return;
       setLines(r.lines);
-      setNames(r.speakers);
+      applyNames(r.speakers);
       setMergeSel(new Set());
     } catch (err) {
       fail(err);
@@ -748,7 +803,7 @@ export function Sessions() {
               placeholder={t('sessions.importUrlPlaceholder')}
               disabled={importing}
               onChange={e => setImportUrl(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') importFromUrl(); }}
+              onKeyDown={e => { if (isSubmitEnter(e)) importFromUrl(); }}
             />
             <button type="button" disabled={importing || !importUrl.trim()} onClick={importFromUrl}>
               <LinkIcon size={16} />

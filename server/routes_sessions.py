@@ -137,7 +137,7 @@ def post_correction(body: dict) -> list[dict]:
     return get_corrections()
 
 
-@router.put("/api/corrections/{wrong}")
+@router.put("/api/corrections/{wrong:path}")
 def put_correction(wrong: str, body: dict) -> list[dict]:
     try:
         main.store.edit_correction(wrong, str(body.get("wrong", wrong)), str(body.get("right", "")))
@@ -148,7 +148,7 @@ def put_correction(wrong: str, body: dict) -> list[dict]:
     return get_corrections()
 
 
-@router.delete("/api/corrections/{wrong}")
+@router.delete("/api/corrections/{wrong:path}")
 def delete_correction(wrong: str) -> list[dict]:
     main.store.forget_correction(wrong)
     return get_corrections()

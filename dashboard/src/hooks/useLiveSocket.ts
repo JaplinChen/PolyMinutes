@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { API_BASE_URL } from '../services/api';
 import { mergeLine } from '../utils/mergeLine';
+import type { DisplaySettings } from '../services/app.api';
+
+export type { DisplaySettings };
 
 export interface LiveLine {
   id: number;
@@ -10,15 +13,6 @@ export interface LiveLine {
   source: string;
   translations: Record<string, string>;
   refined: boolean;
-}
-
-export interface DisplaySettings {
-  font_size: number;
-  lines: number;
-  show_source: 'top' | 'bottom' | 'hidden';
-  show_speaker: boolean;
-  colour_speakers: boolean;
-  theme: 'dark' | 'light';
 }
 
 const DEFAULT_DISPLAY: DisplaySettings = {
@@ -34,6 +28,9 @@ const DEFAULT_DISPLAY: DisplaySettings = {
 // this dwarfs that, leaving room for out-of-order retries and in-place revisions while bounding the
 // buffer over a multi-hour meeting.
 const MAX_LIVE_LINES = 200;
+
+// The server pings every 15s when idle; silence past two pings means a half-open socket.
+const STALE_MS = 40_000;
 
 // API_BASE_URL is either '/api' (same origin) or 'http://host:port/api' (Vite dev server).
 function socketUrl(): string {
@@ -59,21 +56,42 @@ export function useLiveSocket() {
   const [languages, setLanguages] = useState<string[]>([]);
   const [connected, setConnected] = useState(false);
   const retry = useRef<number | undefined>(undefined);
+  const sessionId = useRef<number | null>(null);
+  const lastMessageAt = useRef(Date.now());
 
   useEffect(() => {
     let socket: WebSocket | null = null;
     let closed = false;
 
+    // Line start times restart at 0 each meeting, so the old meeting's lines would bury the new ones.
+    const enterSession = (id: unknown) => {
+      if (typeof id !== 'number' || id === sessionId.current) return;
+      sessionId.current = id;
+      setLines([]);
+    };
+
     const connect = () => {
+      lastMessageAt.current = Date.now();
       socket = new WebSocket(socketUrl());
 
       socket.onopen = () => setConnected(true);
 
       socket.onmessage = event => {
-        const msg = JSON.parse(event.data);
+        lastMessageAt.current = Date.now();
+        let msg;
+        try {
+          msg = JSON.parse(event.data);
+        } catch {
+          return;
+        }
         if (msg.type === 'config') {
+          enterSession(msg.sessionId);
           setLanguages(msg.languages ?? []);
           if (msg.display) setDisplay({ ...DEFAULT_DISPLAY, ...msg.display });
+          return;
+        }
+        if (msg.type === 'session') {
+          enterSession(msg.sessionId);
           return;
         }
         if (msg.type === 'line' || msg.type === 'update') {
@@ -89,10 +107,26 @@ export function useLiveSocket() {
     };
 
     connect();
+    // A dropped Wi-Fi link never fires onclose, and close() on it can wait out the closing handshake,
+    // so detach the dead socket and reconnect directly.
+    const watchdog = window.setInterval(() => {
+      if (socket?.readyState === WebSocket.OPEN && Date.now() - lastMessageAt.current > STALE_MS) {
+        socket.onclose = null;
+        socket.onmessage = null;
+        socket.close();
+        setConnected(false);
+        connect();
+      }
+    }, 5000);
     return () => {
       closed = true;
       window.clearTimeout(retry.current);
-      socket?.close();
+      window.clearInterval(watchdog);
+      if (socket) {
+        socket.onclose = null;
+        socket.onmessage = null;
+        socket.close();
+      }
     };
   }, []);
 

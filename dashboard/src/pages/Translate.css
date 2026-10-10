@@ -134,6 +134,3 @@
   font-size: 0.72rem;
   opacity: 0.6;
 }
-/* Keep the run button at its natural width so a short CJK label (翻譯) never
-   collapses and wraps vertically. */
-.translate-page .translate-preview-actions .btn-primary{ flex: 0 0 auto; white-space: nowrap; }

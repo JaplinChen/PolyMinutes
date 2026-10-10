@@ -378,7 +378,7 @@ def _clip_source(name: str, session: int) -> bool:
     raise HTTPException(404, "no such sample")
 
 
-@router.get("/api/speakers/known/{name}/clip")
+@router.get("/api/speakers/known/{name:path}/clip")
 def get_speaker_clip(name: str, session: int | None = None) -> Response:
     """A few seconds of the voice behind the name, so a wrong match is audible rather than guessed.
 
@@ -400,7 +400,7 @@ def get_speaker_clip(name: str, session: int | None = None) -> Response:
     return _clip(main.store.speaker_sample(name, session))
 
 
-@router.delete("/api/speakers/known/{name}/clip")
+@router.delete("/api/speakers/known/{name:path}/clip")
 def delete_known_speaker_clip(name: str, session: int) -> list[dict]:
     """Drop one bad sample: undo the meeting that taught it, not just hide the audio.
 
@@ -425,7 +425,7 @@ def delete_known_speaker_clip(name: str, session: int) -> list[dict]:
     return get_known_speakers()
 
 
-@router.put("/api/speakers/known/{name}/clip")
+@router.put("/api/speakers/known/{name:path}/clip")
 def reassign_known_speaker_clip(name: str, body: dict, session: int) -> list[dict]:
     """The same undo, but the sample belongs to somebody the room knows: hand it over.
 
@@ -476,19 +476,7 @@ def get_line_clip(session_id: int, line_id: int) -> Response:
     return _clip((session["wav_path"], line["start"], span or None), min(span, MAX_LINE_SECONDS) or None)
 
 
-@router.put("/api/speakers/known/{name}")
-def rename_known_speaker(name: str, body: dict) -> list[dict]:
-    new = str(body.get("name", "")).strip()
-    if not new:
-        raise HTTPException(400, "name required")
-    try:
-        main.store.rename_speaker(name, new)
-    except ValueError as exc:
-        raise HTTPException(409, str(exc)) from exc
-    return get_known_speakers()
-
-
-@router.put("/api/speakers/known/{name}/language")
+@router.put("/api/speakers/known/{name:path}/language")
 def set_known_speaker_language(name: str, body: dict) -> list[dict]:
     language = str(body.get("language", "")).strip()
     # '' is auto-detect; anything else must be a language this room actually runs, or a typo would
@@ -500,13 +488,27 @@ def set_known_speaker_language(name: str, body: dict) -> list[dict]:
     return get_known_speakers()
 
 
-@router.put("/api/speakers/known/{name}/department")
+@router.put("/api/speakers/known/{name:path}/department")
 def set_known_speaker_department(name: str, body: dict) -> list[dict]:
     main.store.set_speaker_department(name, str(body.get("department", "")).strip())
     return get_known_speakers()
 
 
-@router.delete("/api/speakers/known/{name}")
+# {name:path} is greedy and Starlette matches in registration order, so the catch-alls must stay
+# below every /known/{name}/<suffix> route or "X/language" would be taken as a name.
+@router.put("/api/speakers/known/{name:path}")
+def rename_known_speaker(name: str, body: dict) -> list[dict]:
+    new = str(body.get("name", "")).strip()
+    if not new:
+        raise HTTPException(400, "name required")
+    try:
+        main.store.rename_speaker(name, new)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return get_known_speakers()
+
+
+@router.delete("/api/speakers/known/{name:path}")
 def delete_known_speaker(name: str) -> list[dict]:
     main.store.forget_speaker(name)
     return get_known_speakers()

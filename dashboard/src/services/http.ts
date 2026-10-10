@@ -33,7 +33,12 @@ export async function request<T>(endpoint: string, options: RequestInit = {}): P
     const error = await response.json().catch(() => ({}));
     // FastAPI puts the message on `detail` (HTTPException); `message` is only for anything that isn't
     // FastAPI. Reading `detail` first is what lets a toast show the real reason instead of "HTTP 400".
-    const err = new Error(error.detail || error.message || `HTTP ${response.status}`) as Error & { status?: number };
+    // A 422 validation error carries `detail` as a list of {loc, msg, ...}; stringified it read
+    // "[object Object]".
+    const detail = Array.isArray(error.detail)
+      ? error.detail.map((item: { msg?: string }) => item?.msg).filter(Boolean).join('; ')
+      : error.detail;
+    const err = new Error(detail || error.message || `HTTP ${response.status}`) as Error & { status?: number };
     err.status = response.status;
     throw err;
   }

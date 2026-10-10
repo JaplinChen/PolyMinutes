@@ -1,11 +1,3 @@
-
-
-.etable-page .page-numbers button.active{
-  background: var(--primary);
-  border-color: var(--primary);
-  color: var(--primary-ink);
-}
-
 .etable-page .animate-spin{
   animation: spin 1s linear infinite;
 }

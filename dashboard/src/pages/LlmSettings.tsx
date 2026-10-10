@@ -1,4 +1,4 @@
-import { useState, useEffect, useId } from 'react';
+import { useState, useEffect, useEffectEvent, useId } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Loader2, Save } from 'lucide-react';
 import { translateApi, type LlmProvider, type LlmProviderSaved } from '../services/api';
@@ -74,6 +74,10 @@ export function LlmSettings() {
     setSummaryModel(c.llmSummaryModel ?? '');
   };
 
+  // A UI-language switch gives ToastProvider a new `t` and so a new `toast`; reading both through an
+  // effect event keeps the load once per mount, so switching language never wipes unsaved edits.
+  const loadFailed = useEffectEvent((err: unknown) =>
+    toast.error(t('llm.loadFailed', { message: err instanceof Error ? err.message : 'unknown' })));
   useEffect(() => {
     let alive = true;
     translateApi
@@ -83,12 +87,12 @@ export function LlmSettings() {
         mapFromConfig(c);
         setLoaded(true);
       })
-      .catch(err => alive && toast.error(t('llm.loadFailed', { message: err instanceof Error ? err.message : 'unknown' })))
+      .catch(err => alive && loadFailed(err))
       .finally(() => alive && setLoading(false));
     return () => {
       alive = false;
     };
-  }, [t]);
+  }, []);
 
   const patchTab = (idx: number, patch: Partial<ProviderConfig>) =>
     setTabs(prev => prev.map((tab, i) => (i === idx ? { ...tab, ...patch } : tab)));
