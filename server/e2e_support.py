@@ -129,7 +129,7 @@ class StubTranslator:
         self.calls += 1
         out = {t: f"[{t}] {line.text}" for t in targets}
         if self.calls == 3 and previous is not None:
-            return translate.Result(out, "corrected source", {t: f"[{t}] corrected" for t in targets})
+            return translate.Result(out, f"{previous.text} (fixed)", {t: f"[{t}] corrected" for t in targets})
         return translate.Result(out)
 
 

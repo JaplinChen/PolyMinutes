@@ -59,7 +59,7 @@ def test_pipeline_emits_line_then_update(tmp: Path) -> None:
         stored = st.lines(session)
         assert len(stored) == len(lines), "every emitted line must be persisted"
         refined = [r for r in stored if r["refined"]]
-        assert refined and refined[0]["source"] == "corrected source"
+        assert refined and refined[0]["source"].endswith(" (fixed)"), refined
         assert refined[0]["translations"]["zh"] == "[zh] corrected"
     finally:
         st.close()
@@ -170,3 +170,32 @@ def test_a_source_only_refinement_keeps_the_translations_on_screen(tmp: Path) ->
     second = updates[1]
     assert second["translations"].get("en") == "revised en", second["translations"]
     assert second["translations"].get("vi") == "[vi] 第二句", second["translations"]
+
+
+def test_a_previous_source_that_is_another_line_is_not_written_over_it(tmp: Path) -> None:
+    """aya returned a context line, speaker tag included, as the "corrected" source (2026-10-10
+    replay of session 8): the previous line was overwritten with what someone else said earlier."""
+    from .e2e_support import headless_pipeline
+
+    class EchoesContext:
+        calls = 0
+
+        def translate(self, line, targets, context=None, previous=None, terms=None,
+                      prev_targets=None):
+            self.calls += 1
+            out = {t: f"[{t}] {line.text}" for t in targets}
+            if self.calls == 2:
+                return translate.Result(out, "[S1] 完全不同的另一句話", {})
+            return translate.Result(out)
+
+    st = store_mod.Store(tmp / "refine-echo.db")
+    session = st.start_session("now", "x.wav")
+    events: list[dict] = []
+    pipe = headless_pipeline(config.Config(languages=["zh", "en"]), st, session, EchoesContext(), events.append)
+    for k, text in enumerate(["這批要分包給外面的廠商做", "下週再評估"]):
+        pipe._transcriber = type("T", (), {"transcribe": staticmethod(lambda s, l, _t=text: (_t, "zh")),
+                                           "set_hotwords": staticmethod(lambda h: None)})()
+        pipe._handle(asr.Segment(np.zeros(1600, dtype="float32"), start=float(k)))
+
+    assert [e for e in events if e["type"] == "update"] == []
+    assert st.lines(session)[0]["source"] == "這批要分包給外面的廠商做"
