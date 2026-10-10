@@ -177,25 +177,27 @@ def test_a_previous_source_that_is_another_line_is_not_written_over_it(tmp: Path
     replay of session 8): the previous line was overwritten with what someone else said earlier."""
     from .e2e_support import headless_pipeline
 
-    class EchoesContext:
-        calls = 0
+    # Unrelated text, and the same speaker's near-identical line with its tag: the second passed a
+    # similarity check alone.
+    for k, proposed in enumerate(["完全不同的另一句話", "[S1] 這批要分包給外面的廠商做吧"]):
+        class EchoesContext:
+            calls = 0
 
-        def translate(self, line, targets, context=None, previous=None, terms=None,
-                      prev_targets=None):
-            self.calls += 1
-            out = {t: f"[{t}] {line.text}" for t in targets}
-            if self.calls == 2:
-                return translate.Result(out, "[S1] 完全不同的另一句話", {})
-            return translate.Result(out)
+            def translate(self, line, targets, context=None, previous=None, terms=None,
+                          prev_targets=None, _p=proposed):
+                self.calls += 1
+                out = {t: f"[{t}] {line.text}" for t in targets}
+                return translate.Result(out, _p, {}) if self.calls == 2 else translate.Result(out)
 
-    st = store_mod.Store(tmp / "refine-echo.db")
-    session = st.start_session("now", "x.wav")
-    events: list[dict] = []
-    pipe = headless_pipeline(config.Config(languages=["zh", "en"]), st, session, EchoesContext(), events.append)
-    for k, text in enumerate(["這批要分包給外面的廠商做", "下週再評估"]):
-        pipe._transcriber = type("T", (), {"transcribe": staticmethod(lambda s, l, _t=text: (_t, "zh")),
-                                           "set_hotwords": staticmethod(lambda h: None)})()
-        pipe._handle(asr.Segment(np.zeros(1600, dtype="float32"), start=float(k)))
+        st = store_mod.Store(tmp / f"refine-echo-{k}.db")
+        session = st.start_session("now", "x.wav")
+        events: list[dict] = []
+        pipe = headless_pipeline(config.Config(languages=["zh", "en"]), st, session, EchoesContext(), events.append)
+        for j, text in enumerate(["這批要分包給外面的廠商做", "下週再評估"]):
+            pipe._transcriber = type("T", (), {"transcribe": staticmethod(lambda s, l, _t=text: (_t, "zh")),
+                                               "set_hotwords": staticmethod(lambda h: None)})()
+            pipe._handle(asr.Segment(np.zeros(1600, dtype="float32"), start=float(j)))
 
-    assert [e for e in events if e["type"] == "update"] == []
-    assert st.lines(session)[0]["source"] == "這批要分包給外面的廠商做"
+        assert [e for e in events if e["type"] == "update"] == [], proposed
+        assert st.lines(session)[0]["source"] == "這批要分包給外面的廠商做", proposed
+        st.close()
