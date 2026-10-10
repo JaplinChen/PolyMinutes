@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from dataclasses import asdict
@@ -14,6 +15,9 @@ from .pipeline import Pipeline
 log = logging.getLogger("polyminutes")
 
 router = APIRouter()
+
+# Idle sockets get a ping this often, so the TV can tell a quiet meeting from a dead connection.
+PING_SECONDS = 15.0
 
 
 @router.post("/api/recording/start")
@@ -41,6 +45,8 @@ def start_recording() -> dict:
     # and a stranded permit is silent: every later pass simply waits, forever, on nothing.
     try:
         session_id = main.store.start_session(time.strftime("%Y-%m-%dT%H:%M:%S"), str(path))
+        # Tells /live to drop the previous meeting's lines; their start times would hide the new ones.
+        main.hub.publish({"type": "session", "sessionId": session_id})
         try:
             # Constructing the pipeline is what loads the recogniser, the VAD and the speaker model
             # off disk. Missing weights raised out of here as an unhandled error, so the page showed
@@ -109,10 +115,16 @@ async def live(ws: WebSocket) -> None:
     queue_ = main.hub.subscribe()
     try:
         cfg = main.state["cfg"]
-        await ws.send_json({"type": "config", "languages": cfg.languages, "display": asdict(cfg.display)})
+        await ws.send_json({"type": "config", "languages": cfg.languages,
+                            "display": asdict(cfg.display), "sessionId": main.state["session"]})
         while True:
-            await ws.send_json(await queue_.get())
-    except WebSocketDisconnect:
+            try:
+                msg = await asyncio.wait_for(queue_.get(), PING_SECONDS)
+            except asyncio.TimeoutError:
+                msg = {"type": "ping"}
+            await ws.send_json(msg)
+    except (WebSocketDisconnect, RuntimeError, OSError):
+        # A send on a dead socket raises rather than disconnecting; either way this client is gone.
         pass
     finally:
         main.hub.unsubscribe(queue_)
