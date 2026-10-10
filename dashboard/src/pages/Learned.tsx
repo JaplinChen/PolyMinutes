@@ -7,6 +7,7 @@ import { useToast } from '../components/Toast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { appApi, type KnownSpeaker, type LearnedCorrection, type SpeakerClip } from '../services/app.api';
 import { API_BASE_URL } from '../services/http';
+import { isSubmitEnter } from '../utils/ime';
 import './Learned.css';
 
 /**
@@ -120,11 +121,20 @@ export function Learned() {
   const [deptDrafts, setDeptDrafts] = useState<Record<string, string>>({});
   const saveDepartment = async (name: string, current: string) => {
     const next = (deptDrafts[name] ?? current).trim();
-    if (next === current) return;
+    const clearDraft = () => setDeptDrafts(prev => {
+      const rest = { ...prev };
+      delete rest[name];
+      return rest;
+    });
+    if (next === current) {
+      clearDraft();
+      return;
+    }
     setBusy(name);
     try {
       const res = await appApi.setSpeakerDepartment(name, next);
       setSpeakers(prev => stableOrder(prev, res));
+      clearDraft();
     } catch (err) {
       fail(err);
     } finally {
@@ -246,7 +256,7 @@ export function Learned() {
                     onChange={e => setDraft(e.target.value)}
                     onBlur={() => renameSpeaker(s.name)}
                     onKeyDown={e => {
-                      if (e.key === 'Enter') e.currentTarget.blur();
+                      if (isSubmitEnter(e)) e.currentTarget.blur();
                       if (e.key === 'Escape') setEditing(null);
                     }}
                   />
@@ -272,7 +282,7 @@ export function Learned() {
                   disabled={busy !== null}
                   onChange={e => setDeptDrafts(d => ({ ...d, [s.name]: e.target.value }))}
                   onBlur={() => saveDepartment(s.name, s.department)}
-                  onKeyDown={e => e.key === 'Enter' && e.currentTarget.blur()}
+                  onKeyDown={e => isSubmitEnter(e) && e.currentTarget.blur()}
                 />
                 <select
                   className="learned-lang"
