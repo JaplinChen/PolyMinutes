@@ -1,4 +1,5 @@
 import { useCallback, useRef } from 'react';
+import { readStorage, writeStorage } from '../utils/storage.ts';
 
 /**
  * Drag-resizes individual grid columns of a panel whose row/header templates read `var(--col-<key>)`.
@@ -27,7 +28,7 @@ export function useResizableCol(storageKey: string) {
   const setRef = useCallback(
     (el: HTMLElement | null) => {
       ref.current = el;
-      if (el) restoreColumnWidths(el, localStorage.getItem(storageKey));
+      if (el) restoreColumnWidths(el, readStorage(storageKey));
     },
     [storageKey],
   );
@@ -52,7 +53,7 @@ export function useResizableCol(storageKey: string) {
       for (const name of panel.style) {
         if (name.startsWith('--col-')) widths[name.slice(6)] = panel.style.getPropertyValue(name);
       }
-      localStorage.setItem(storageKey, JSON.stringify(widths));
+      writeStorage(storageKey, JSON.stringify(widths));
     };
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);

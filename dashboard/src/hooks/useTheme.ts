@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { readStorage, writeStorage } from '../utils/storage';
 
 export type Theme = 'light' | 'dark' | 'system' | 'anthropic' | 'anthropic-dark';
 export type ThemePalette = 'green' | 'blue' | 'graphite' | 'indigo' | 'amber' | 'rose' | 'teal';
@@ -12,7 +13,7 @@ const LEGACY_THEME_KEY = 'openwalab_theme';
 const LEGACY_PALETTE_KEY = 'openwalab_palette';
 
 function readSetting(key: string, legacyKey: string): string | null {
-  return localStorage.getItem(key) ?? localStorage.getItem(legacyKey);
+  return readStorage(key) ?? readStorage(legacyKey);
 }
 
 export const paletteOptions: Array<{ value: ThemePalette; label: string; color: string }> = [
@@ -69,12 +70,12 @@ export function useTheme() {
 
   useEffect(() => {
     applyTheme(theme);
-    localStorage.setItem(THEME_KEY, theme);
+    writeStorage(THEME_KEY, theme);
   }, [theme, applyTheme]);
 
   useEffect(() => {
     applyPalette(palette);
-    localStorage.setItem(PALETTE_KEY, palette);
+    writeStorage(PALETTE_KEY, palette);
   }, [palette, applyPalette]);
 
   const setTheme = useCallback((newTheme: Theme) => {
@@ -93,17 +94,5 @@ export function useTheme() {
     });
   }, []);
 
-  // Get the resolved theme (what's actually displayed)
-  const resolvedTheme =
-    theme === 'system'
-      ? window.matchMedia('(prefers-color-scheme: dark)').matches
-        ? 'dark'
-        : 'light'
-      : theme === 'anthropic'
-        ? 'light'
-        : theme === 'anthropic-dark'
-          ? 'dark'
-          : theme;
-
-  return { theme, setTheme, toggleTheme, resolvedTheme, palette, setPalette, paletteOptions };
+  return { theme, setTheme, toggleTheme, palette, setPalette, paletteOptions };
 }
