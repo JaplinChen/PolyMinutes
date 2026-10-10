@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 
 // Open/close state for a popup menu that dismisses on outside-click or Escape.
-export function useDismissableMenu<T extends HTMLElement>() {
+export function useDismissableMenu<T extends HTMLElement>(onEscape?: () => void) {
   const [open, setOpen] = useState(false);
   const ref = useRef<T>(null);
+  const onEscapeRef = useRef(onEscape);
+  useEffect(() => { onEscapeRef.current = onEscape; });
 
   useEffect(() => {
     if (!open) return;
@@ -12,7 +14,9 @@ export function useDismissableMenu<T extends HTMLElement>() {
       if (!ref.current?.contains(event.target as Node)) setOpen(false);
     };
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
+      if (event.key !== 'Escape') return;
+      setOpen(false);
+      onEscapeRef.current?.();
     };
 
     document.addEventListener('mousedown', closeOnOutsideClick);

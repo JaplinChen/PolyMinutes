@@ -7,7 +7,7 @@ import { useToast } from '../components/Toast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { appApi, type KnownSpeaker, type LearnedCorrection, type SpeakerClip } from '../services/app.api';
 import { API_BASE_URL } from '../services/http';
-import { isSubmitEnter } from '../utils/ime';
+import { isComposingKey, isSubmitEnter } from '../utils/ime';
 import './Learned.css';
 
 /**
@@ -257,7 +257,7 @@ export function Learned() {
                     onBlur={() => renameSpeaker(s.name)}
                     onKeyDown={e => {
                       if (isSubmitEnter(e)) e.currentTarget.blur();
-                      if (e.key === 'Escape') setEditing(null);
+                      if (e.key === 'Escape' && !isComposingKey(e)) setEditing(null);
                     }}
                   />
                 ) : (
@@ -398,7 +398,7 @@ export function Learned() {
                         aria-label={t('learned.editWrong')}
                         value={pair.wrong}
                         onChange={e => setPair(p => ({ ...p, wrong: e.target.value }))}
-                        onKeyDown={e => e.key === 'Escape' && setEditingPair(null)}
+                        onKeyDown={e => e.key === 'Escape' && !isComposingKey(e) && setEditingPair(null)}
                       />
                       <ArrowRight className="learned-arrow" size={14} />
                       <input
@@ -406,7 +406,7 @@ export function Learned() {
                         aria-label={t('learned.editRight')}
                         value={pair.right}
                         onChange={e => setPair(p => ({ ...p, right: e.target.value }))}
-                        onKeyDown={e => e.key === 'Escape' && setEditingPair(null)}
+                        onKeyDown={e => e.key === 'Escape' && !isComposingKey(e) && setEditingPair(null)}
                       />
                       <button className="learned-save" disabled={busy !== null} title={t('common.save')}>
                         <Check size={16} />

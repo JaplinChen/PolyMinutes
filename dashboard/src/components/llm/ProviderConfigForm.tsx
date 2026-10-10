@@ -6,6 +6,7 @@ import { useToast } from '../Toast';
 import { PROVIDERS, metaOf, apiKeyUrlForModel, type ProviderConfig } from './providerMeta';
 import { LlmModelField } from './LlmModelField';
 import { LlmApiKeyField } from './LlmApiKeyField';
+import { isSubmitEnter } from '../../utils/ime';
 
 interface Props {
   value: ProviderConfig;
@@ -149,7 +150,7 @@ export function ProviderConfigForm({ value, keySet, canWrite, allowNone, exclude
               value={fbInput}
               placeholder={t('llm.fallbackPlaceholder', { defaultValue: 'Model name' })}
               onChange={e => setFbInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addFallback())}
+              onKeyDown={e => isSubmitEnter(e) && (e.preventDefault(), addFallback())}
             />
             <button className="btn-secondary" onClick={addFallback} disabled={!fbInput.trim()}>
               <Plus size={16} />

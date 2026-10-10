@@ -98,7 +98,3 @@
   font-size: 0.9375rem;
 }
 
-.translate-page .translate-group-item.selected {
-  border-color: var(--primary);
-  background: color-mix(in srgb, var(--primary) 8%, transparent);
-}
