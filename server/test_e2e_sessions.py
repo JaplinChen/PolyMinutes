@@ -636,6 +636,8 @@ def test_a_rerun_falls_back_to_an_unbiased_decode(client: TestClient) -> None:
     import soundfile as sf
 
     class PromptLocked:
+        _hotwords = "智慧化工廠"
+
         def transcribe(self, samples, language):
             return "", language
 

@@ -55,6 +55,8 @@ def test_a_failed_decode_is_retried_once_the_speaker_language_is_known(tmp: Path
 def test_live_drops_the_glossary_prompt_before_holding_a_clip(tmp: Path) -> None:
     """A clip the prompt silenced is decoded again without it, live, not held and lost."""
     class PromptLocked(ByLanguage):
+        _hotwords = "工序"
+
         def transcribe_unbiased(self, samples, language):
             return "因為這些零件的外觀標準要求特別高", "zh"
 
