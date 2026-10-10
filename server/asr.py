@@ -138,7 +138,7 @@ _HALLUCINATIONS = re.compile(
     # someone arranging a meeting — and 我們下回見面再談 is the same sentence.
     # 再 is allowed between: the sign-off arrives as 下次再見 as often as 下次見, and 我們下次再
     # 見面談 still needs the 見 at the end of the line to match, which it is not.
-    r"|(下次|下期|下集|下回)再?見(再見|囉)?[。！!]?$|多多支援|請按贊|支持明鏡",
+    r"|(下次|下期|下集|下回)(視頻|節目)?再?見(再見|囉)?([，,]謝謝)?[。！!]?$|多多支援|請按贊|支持明鏡",
     re.IGNORECASE,
 )
 

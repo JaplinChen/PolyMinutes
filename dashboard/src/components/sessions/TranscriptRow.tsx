@@ -80,8 +80,8 @@ interface Props {
   onReassign: (lineId: number, speaker: string) => void;
 }
 
-// avg_logprob below this reads as a guess. On the 2026-10-05 meeting (large-v3) it marks 14% of
-// lines: 31 of 45 from the far speaker, 4 of 210 from the chair. -0.8 marked 18% — too many to scan.
+// avg_logprob below this reads as a guess. Rechecked 2026-10-10 (no glossary prompt, per-clip LID):
+// marks 3–13% of lines per meeting, mostly garbled; -0.9..-0.7 is mostly fine short lines.
 const LOW_CONFIDENCE = -0.9;
 
 function Row({ line, speakerOptions, newSpeakerCode, langs, locked, pending, draftText, isRerunning, rerunBlocked, isPlaying, playable, onDraft, onSave, onRerun, onRetranslate, onPlay, onReassign }: Props) {
