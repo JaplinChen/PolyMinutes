@@ -296,8 +296,12 @@ class Pipeline:
         source = prev_line.text
         # A fix to a misheard word keeps most of the line. aya also fills the field with a context
         # line ("[S1] ...", tag included) or a translation, which overwrote what was said (2026-10-10).
-        if result.previous_source and SequenceMatcher(None, source, result.previous_source).ratio() >= SOURCE_FIX_MIN_SIMILARITY:
-            source = result.previous_source
+        # Similarity alone let a same-speaker context line through; a tag or a verbatim copy never is a fix.
+        proposed = result.previous_source
+        if (proposed and not proposed.startswith("[")
+                and all(proposed != c.text for c in self._context)
+                and SequenceMatcher(None, source, proposed).ratio() >= SOURCE_FIX_MIN_SIMILARITY):
+            source = proposed
         if source == prev_line.text and not result.previous_translations:
             return
         self._store.update_line(prev_id, source, result.previous_translations)
