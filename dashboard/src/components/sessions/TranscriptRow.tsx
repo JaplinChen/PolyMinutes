@@ -2,7 +2,7 @@ import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, ChevronRight, Languages, Play, RotateCw, Square } from 'lucide-react';
 import type { TranscriptLine } from '../../services/app.api';
-import { isSubmitEnter } from '../../utils/ime';
+import { isComposingKey, isSubmitEnter } from '../../utils/ime';
 
 type DiffSeg = { kind: 'same' | 'del' | 'add'; text: string };
 
@@ -159,7 +159,7 @@ function Row({ line, speakerOptions, newSpeakerCode, langs, locked, pending, dra
             onChange={e => onDraft({ id: line.id, text: e.target.value })}
             onBlur={() => onSave(line.id, editing.text, line.source)}
             onKeyDown={e => {
-              if (e.key === 'Escape') onDraft(null);
+              if (e.key === 'Escape' && !isComposingKey(e)) onDraft(null);
               // Enter saves, shift+Enter breaks the line: a transcript line is one
               // utterance, so the common case is finishing rather than continuing.
               if (isSubmitEnter(e) && !e.shiftKey) {

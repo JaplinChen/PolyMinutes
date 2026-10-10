@@ -1,4 +1,4 @@
-import { type CSSProperties } from 'react';
+import { useRef, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Sun, Moon, Monitor, Palette } from 'lucide-react';
 import { useTheme, type Theme } from '../hooks/useTheme';
@@ -10,7 +10,8 @@ const modes: Theme[] = ['light', 'dark', 'system', 'anthropic', 'anthropic-dark'
 export function AppearanceMenu() {
   const { t } = useTranslation();
   const { theme, setTheme, palette, setPalette, paletteOptions } = useTheme();
-  const { open, setOpen, ref } = useDismissableMenu<HTMLDivElement>();
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const { open, setOpen, ref } = useDismissableMenu<HTMLDivElement>(() => triggerRef.current?.focus());
 
   const ThemeIcon = themeIcons[theme];
   const themeLabel = t(`theme.${theme}`);
@@ -19,6 +20,7 @@ export function AppearanceMenu() {
   return (
     <div className="appearance-menu" ref={ref}>
       <button
+        ref={triggerRef}
         className="theme-toggle-btn icon-only"
         onClick={() => setOpen(value => !value)}
         title={t('theme.label', { value: themeLabel })}

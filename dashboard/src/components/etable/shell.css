@@ -53,29 +53,6 @@
   cursor: not-allowed;
 }
 
-.etable-page .etable-tab:hover:not(.active) {
-  color: var(--text-primary);
-  background: var(--bg-card, var(--bg-white));
-}
-
-.etable-page .etable-tab.active {
-  color: var(--primary-text, var(--text-primary));
-  background: var(--bg-card, var(--bg-white));
-  box-shadow: var(--shadow-sm);
-}
-
-/* Inactive tabs get a muted count chip so the segmented control reads calm; the active tab and
-   the panel-title reuse the solid primary chip below. */
-.etable-page .etable-tab .etable-count {
-  background: var(--primary-soft);
-  color: var(--primary-text);
-}
-
-.etable-page .etable-tab.active .etable-count {
-  background: var(--primary);
-  color: var(--primary-ink);
-}
-
 /* Panels size to their content and the page scrolls — one scrollbar, no nesting.
 
    This was flex:1, which only works when a page has exactly one panel. Every page here has two or

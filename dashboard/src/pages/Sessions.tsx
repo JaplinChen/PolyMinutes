@@ -13,6 +13,7 @@ import { appApi, type CitedItem, type MeetingSummary, type PendingRule, type Ref
 import { API_BASE_URL, NO_SUCH_ENDPOINT } from '../services/http';
 import { editingLocked } from '../services/sessionSummary';
 import './Sessions.css';
+import { isSubmitEnter } from '../utils/ime';
 import './Sessions.refine.css';
 import './Sessions.summary.css';
 
@@ -802,7 +803,7 @@ export function Sessions() {
               placeholder={t('sessions.importUrlPlaceholder')}
               disabled={importing}
               onChange={e => setImportUrl(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') importFromUrl(); }}
+              onKeyDown={e => { if (isSubmitEnter(e)) importFromUrl(); }}
             />
             <button type="button" disabled={importing || !importUrl.trim()} onClick={importFromUrl}>
               <LinkIcon size={16} />

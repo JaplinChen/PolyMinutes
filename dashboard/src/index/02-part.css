@@ -48,7 +48,6 @@ code {
 
 /* Keep code, technical identifiers, and numbers LTR even inside RTL containers */
 [dir='rtl'] code,
-[dir='rtl'] .mono,
 [dir='rtl'] pre {
   direction: ltr;
   text-align: left;

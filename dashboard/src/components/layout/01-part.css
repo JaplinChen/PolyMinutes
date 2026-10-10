@@ -192,8 +192,7 @@ body.sidebar-resizing .main-content {
   border-top: 1px solid var(--border);
 }
 
-.theme-toggle-btn.icon-only,
-.logout-btn.icon-only {
+.theme-toggle-btn.icon-only {
   gap: 0;
   padding: var(--space-2);
 }
@@ -244,8 +243,7 @@ body.sidebar-resizing .main-content {
   filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.25));
 }
 
-.sidebar.collapsed .theme-toggle-btn,
-.sidebar.collapsed .logout-btn {
+.sidebar.collapsed .theme-toggle-btn {
   justify-content: center;
   padding: var(--space-2);
 }
