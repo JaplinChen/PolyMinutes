@@ -29,6 +29,9 @@ const DEFAULT_DISPLAY: DisplaySettings = {
 // buffer over a multi-hour meeting.
 const MAX_LIVE_LINES = 200;
 
+// The server pings every 15s when idle; silence past two pings means a half-open socket.
+const STALE_MS = 40_000;
+
 // API_BASE_URL is either '/api' (same origin) or 'http://host:port/api' (Vite dev server).
 function socketUrl(): string {
   const base = API_BASE_URL.replace(/\/api$/, '');
@@ -53,21 +56,42 @@ export function useLiveSocket() {
   const [languages, setLanguages] = useState<string[]>([]);
   const [connected, setConnected] = useState(false);
   const retry = useRef<number | undefined>(undefined);
+  const sessionId = useRef<number | null>(null);
+  const lastMessageAt = useRef(Date.now());
 
   useEffect(() => {
     let socket: WebSocket | null = null;
     let closed = false;
 
+    // Line start times restart at 0 each meeting, so the old meeting's lines would bury the new ones.
+    const enterSession = (id: unknown) => {
+      if (typeof id !== 'number' || id === sessionId.current) return;
+      sessionId.current = id;
+      setLines([]);
+    };
+
     const connect = () => {
+      lastMessageAt.current = Date.now();
       socket = new WebSocket(socketUrl());
 
       socket.onopen = () => setConnected(true);
 
       socket.onmessage = event => {
-        const msg = JSON.parse(event.data);
+        lastMessageAt.current = Date.now();
+        let msg;
+        try {
+          msg = JSON.parse(event.data);
+        } catch {
+          return;
+        }
         if (msg.type === 'config') {
+          enterSession(msg.sessionId);
           setLanguages(msg.languages ?? []);
           if (msg.display) setDisplay({ ...DEFAULT_DISPLAY, ...msg.display });
+          return;
+        }
+        if (msg.type === 'session') {
+          enterSession(msg.sessionId);
           return;
         }
         if (msg.type === 'line' || msg.type === 'update') {
@@ -83,10 +107,26 @@ export function useLiveSocket() {
     };
 
     connect();
+    // A dropped Wi-Fi link never fires onclose, and close() on it can wait out the closing handshake,
+    // so detach the dead socket and reconnect directly.
+    const watchdog = window.setInterval(() => {
+      if (socket?.readyState === WebSocket.OPEN && Date.now() - lastMessageAt.current > STALE_MS) {
+        socket.onclose = null;
+        socket.onmessage = null;
+        socket.close();
+        setConnected(false);
+        connect();
+      }
+    }, 5000);
     return () => {
       closed = true;
       window.clearTimeout(retry.current);
-      socket?.close();
+      window.clearInterval(watchdog);
+      if (socket) {
+        socket.onclose = null;
+        socket.onmessage = null;
+        socket.close();
+      }
     };
   }, []);
 

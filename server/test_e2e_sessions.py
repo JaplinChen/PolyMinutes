@@ -34,6 +34,26 @@ def test_websocket_receives_config_and_events(client: TestClient) -> None:
         assert ws.receive_json()["line"]["id"] == 1
 
 
+def test_websocket_announces_the_session(client: TestClient) -> None:
+    """/live keys lines by start time within a meeting, so it must learn when the meeting changes."""
+    with client.websocket_connect("/ws/live") as ws:
+        first = ws.receive_json()
+        assert "sessionId" in first and first["sessionId"] is None
+        threading.Thread(target=lambda: main.hub.publish({"type": "session", "sessionId": 7})).start()
+        assert ws.receive_json() == {"type": "session", "sessionId": 7}
+
+
+def test_idle_websocket_is_pinged(client: TestClient) -> None:
+    from . import routes_capture
+    saved, routes_capture.PING_SECONDS = routes_capture.PING_SECONDS, 0.2
+    try:
+        with client.websocket_connect("/ws/live") as ws:
+            assert ws.receive_json()["type"] == "config"
+            assert ws.receive_json() == {"type": "ping"}
+    finally:
+        routes_capture.PING_SECONDS = saved
+
+
 def test_known_voice_can_be_heard_and_renamed(client: TestClient) -> None:
     """A learned voice is only inspectable if you can play it back and fix the name on it."""
     import soundfile as sf
