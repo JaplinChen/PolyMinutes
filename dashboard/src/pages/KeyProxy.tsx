@@ -6,6 +6,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { useResizableCol } from '../hooks/useResizableCol';
 import { useRole } from '../hooks/useRole';
 import { NO_AUTOFILL } from '../utils/noAutofill';
+import { isSubmitEnter } from '../utils/ime';
 import { useToast } from '../components/Toast';
 import { PageHeader } from '../components/PageHeader';
 import { PageSkeleton } from '../components/PageSkeleton';
@@ -138,7 +139,7 @@ export function KeyProxy() {
             placeholder={t('keyproxy.keyPlaceholder')}
             value={apiKey}
             onChange={e => setApiKey(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && !busy && add()}
+            onKeyDown={e => isSubmitEnter(e) && !busy && add()}
             disabled={busy}
           />
           <input
@@ -149,7 +150,7 @@ export function KeyProxy() {
             placeholder={t('keyproxy.accountPlaceholder')}
             value={account}
             onChange={e => setAccount(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && !busy && add()}
+            onKeyDown={e => isSubmitEnter(e) && !busy && add()}
             disabled={busy}
           />
           <button className="btn-primary" onClick={add} disabled={busy || !apiKey.trim()}>

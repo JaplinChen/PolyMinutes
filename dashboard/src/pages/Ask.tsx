@@ -6,6 +6,7 @@ import { PageHeader } from '../components/PageHeader';
 import { useToast } from '../components/Toast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { appApi, type AskCitation, type AskResult } from '../services/app.api';
+import { isSubmitEnter } from '../utils/ime';
 import './Ask.css';
 
 // Copied rather than imported from Sessions' TranscriptRow: the same m:ss format, kept local so this
@@ -66,7 +67,7 @@ export function Ask() {
           placeholder={t('ask.placeholder')}
           onChange={e => setQuestion(e.target.value)}
           onKeyDown={e => {
-            if (e.key === 'Enter' && !e.shiftKey) {
+            if (isSubmitEnter(e) && !e.shiftKey) {
               e.preventDefault();
               ask();
             }
