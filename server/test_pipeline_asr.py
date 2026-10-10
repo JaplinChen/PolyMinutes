@@ -179,6 +179,27 @@ def test_a_high_no_speech_score_drops_only_boilerplate_not_content() -> None:
     assert not asr_gpu._spoken(_Seg("đăng ký kênh", 0.95))
 
 
+def test_without_a_prompt_an_empty_clip_is_decoded_once() -> None:
+    """GLOSSARY_PROMPT off leaves nothing to drop: the 'unbiased' retry would repeat the decode."""
+    class NoPrompt:
+        _hotwords = ""
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def transcribe(self, samples, language):
+            self.calls += 1
+            return "", language
+
+        def transcribe_unbiased(self, samples, language):
+            self.calls += 1
+            return "", language
+
+    r = NoPrompt()
+    assert asr_gpu.decode(r, np.zeros(1600, dtype=np.float32), "zh") == ("", "zh")
+    assert r.calls == 1, r.calls
+
+
 def test_an_empty_decode_is_retried_without_the_glossary_prompt() -> None:
     """The prompt is a prior, and a prior can talk the decoder out of a sentence.
 
@@ -186,6 +207,8 @@ def test_an_empty_decode_is_retried_without_the_glossary_prompt() -> None:
     utterance is not written off until the recogniser has been asked without it.
     """
     class Recogniser:
+        _hotwords = "六合"  # a prompt was in use — the only case the retry is for
+
         def __init__(self) -> None:
             self.plain = 0
 

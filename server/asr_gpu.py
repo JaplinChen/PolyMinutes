@@ -413,7 +413,10 @@ def decode(transcriber, samples: np.ndarray, language: str) -> tuple[str, str]:
     A recogniser without `transcribe_unbiased` (the CPU one, test fakes) just gets the one attempt.
     """
     text, used = transcriber.transcribe(samples, language)
-    if not text and (plain := getattr(transcriber, "transcribe_unbiased", None)):
+    # Only worth it when there was a prompt to drop. With GLOSSARY_PROMPT off the "unbiased" decode
+    # is the same decode again — on the live subtitle thread, every empty clip paid for it twice.
+    if (not text and getattr(transcriber, "_hotwords", "")
+            and (plain := getattr(transcriber, "transcribe_unbiased", None))):
         text, used = plain(samples, language)
     return text, used
 
