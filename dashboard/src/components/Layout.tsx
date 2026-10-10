@@ -6,6 +6,7 @@ import { resolveSupportedLanguage, rtlLanguages } from '../i18n';
 import { healthApi } from '../services/api';
 import { LanguageMenu } from './LanguageMenu';
 import { AppearanceMenu } from './AppearanceMenu';
+import { readStorage, writeStorage } from '../utils/storage';
 import './Layout.css';
 
 const navItems = [
@@ -78,7 +79,7 @@ export function Layout() {
   }, [isMobileOpen]);
 
   useEffect(() => {
-    const saved = parseInt(localStorage.getItem('sidebarWidth') || '', 10);
+    const saved = parseInt(readStorage('sidebarWidth') || '', 10);
     if (saved >= 180 && saved <= 480) document.documentElement.style.setProperty('--sidebar-w', `${saved}px`);
   }, []);
 
@@ -97,12 +98,12 @@ export function Layout() {
     };
     const onUp = () => {
       document.body.classList.remove('sidebar-resizing');
-      localStorage.setItem(
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      writeStorage(
         'sidebarWidth',
         String(parseInt(document.documentElement.style.getPropertyValue('--sidebar-w'), 10) || 260)
       );
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);

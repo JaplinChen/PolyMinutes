@@ -14,6 +14,22 @@
       href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&family=JetBrains+Mono:wght@400..700&display=swap"
     />
     <title>PolyMinutes</title>
+    <!-- Mirrors useTheme's initial state so the first paint already has the saved theme. -->
+    <script>
+      (function () {
+        var root = document.documentElement;
+        var theme = 'anthropic';
+        var palette = 'green';
+        try {
+          var t = localStorage.getItem('polyminutes_theme') ?? localStorage.getItem('openwalab_theme');
+          var p = localStorage.getItem('polyminutes_palette') ?? localStorage.getItem('openwalab_palette');
+          if (['light', 'dark', 'system', 'anthropic', 'anthropic-dark'].indexOf(t) >= 0) theme = t;
+          if (['green', 'blue', 'graphite', 'indigo', 'amber', 'rose', 'teal'].indexOf(p) >= 0) palette = p;
+        } catch (e) {}
+        if (theme !== 'system') root.setAttribute('data-theme', theme);
+        root.setAttribute('data-palette', palette);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

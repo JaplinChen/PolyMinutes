@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { API_BASE_URL } from '../services/api';
 import { mergeLine } from '../utils/mergeLine';
+import type { DisplaySettings } from '../services/app.api';
+
+export type { DisplaySettings };
 
 export interface LiveLine {
   id: number;
@@ -10,15 +13,6 @@ export interface LiveLine {
   source: string;
   translations: Record<string, string>;
   refined: boolean;
-}
-
-export interface DisplaySettings {
-  font_size: number;
-  lines: number;
-  show_source: 'top' | 'bottom' | 'hidden';
-  show_speaker: boolean;
-  colour_speakers: boolean;
-  theme: 'dark' | 'light';
 }
 
 const DEFAULT_DISPLAY: DisplaySettings = {
