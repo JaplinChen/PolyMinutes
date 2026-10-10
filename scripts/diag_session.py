@@ -44,6 +44,7 @@ def main() -> None:
     ap.add_argument("--lid", action="store_true",
                     help="re-detect each speaker's language from the audio (loads the GPU model)")
     args = ap.parse_args()
+    sys.stdout.reconfigure(encoding="utf-8")  # cp950 consoles print the transcript as mojibake
     db = sqlite3.connect(f"file:{args.db.resolve().as_posix()}?mode=ro", uri=True)
     for sid in args.session_ids:
         diagnose(db, sid, args.api if args.fix else None)

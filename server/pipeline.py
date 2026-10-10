@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import queue
 import threading
+from difflib import SequenceMatcher
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -19,6 +20,8 @@ import numpy as np
 from . import asr, asr_gpu, config, correct, diarize, translate
 from .retry import Retries
 from .store import Store
+
+SOURCE_FIX_MIN_SIMILARITY = 0.6
 
 log = logging.getLogger("polyminutes.pipeline")
 
@@ -290,7 +293,13 @@ class Pipeline:
             return
 
         prev_id, prev_start, prev_line, prev_translations = self._previous
-        source = result.previous_source or prev_line.text
+        source = prev_line.text
+        # A fix to a misheard word keeps most of the line. aya also fills the field with a context
+        # line ("[S1] ...", tag included) or a translation, which overwrote what was said (2026-10-10).
+        if result.previous_source and SequenceMatcher(None, source, result.previous_source).ratio() >= SOURCE_FIX_MIN_SIMILARITY:
+            source = result.previous_source
+        if source == prev_line.text and not result.previous_translations:
+            return
         self._store.update_line(prev_id, source, result.previous_translations)
         # The event mirrors what the store now holds: revised languages replaced, the rest kept.
         # Emitted verbatim, a source-only revision blanked the subtitle the room was reading, and
