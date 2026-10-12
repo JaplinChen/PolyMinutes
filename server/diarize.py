@@ -217,7 +217,8 @@ def _heal(found: list[Turn]) -> list[Turn]:
     return healed
 
 
-def turns(wav: Path, threshold: float | None = None) -> list[Turn] | None:
+def turns(wav: Path, threshold: float | None = None,
+          progress: Callable[[int, int], None] | None = None) -> list[Turn] | None:
     """Where the speaker changes across a whole recording, or None if the model is not installed.
 
     The VAD cannot answer this. It hears speech against silence, so two people talking without a
@@ -264,7 +265,11 @@ def turns(wav: Path, threshold: float | None = None) -> list[Turn] | None:
             # spawn on Windows, so the worker imports `server.diarize` fresh. It must never reach
             # `server.main`, which builds a Store and reads config at import.
             with ProcessPoolExecutor(max_workers=workers) as pool:
-                pieces = list(pool.map(_segment_chunk, jobs))
+                pieces = []
+                for piece in pool.map(_segment_chunk, jobs):
+                    pieces.append(piece)
+                    if progress:
+                        progress(len(pieces), len(jobs))
         except (BrokenProcessPool, OSError):
             # A pool that will not start is a slower import, not a failed one. Spawn re-imports
             # the parent's `__main__`, so an embedder whose entry point lacks the usual guard
