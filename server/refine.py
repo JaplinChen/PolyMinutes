@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable
 
 from opencc import OpenCC
@@ -89,6 +89,7 @@ class Coverage:
     """
     lines: int = 0
     skipped: int = 0
+    reasons: dict[int, str] = field(default_factory=dict)  # line index -> refine_failed | refine_overwrite
 
     @property
     def fraction(self) -> float:
@@ -320,7 +321,11 @@ class Refiner:
             prompt = build_prompt(chunk, context, terms or [], self._topic)
             for attempt in (1, 2):
                 try:
+                    before = coverage.skipped if coverage is not None else 0
                     out += parse_response(self._chat(prompt), chunk, terms, rejected, coverage)
+                    if coverage is not None and coverage.skipped > before:
+                        coverage.reasons.update(
+                            dict.fromkeys(range(start, start + len(chunk)), "refine_overwrite"))
                     break
                 except jobs.Cancelled:
                     raise
@@ -331,6 +336,8 @@ class Refiner:
                     log.exception("refine failed twice at line %d, keeping originals", start)
                     if coverage is not None:
                         coverage.skipped += len(chunk)
+                        coverage.reasons.update(
+                            dict.fromkeys(range(start, start + len(chunk)), "refine_failed"))
                     out += [l.text for l in chunk]
             if on_progress is not None:
                 on_progress(min(start + CHUNK_LINES, len(lines)), len(lines))

@@ -1036,6 +1036,11 @@ def test_a_twice_failed_punctuation_batch_is_counted_as_skipped(tmp: Path) -> No
         s = jobs.state(sid)
         assert (s["skipped"], s["done"], s["total"]) == (1, 1, 1), s
         assert [r["source"] for r in st.lines(sid)] == ["壞掉的一批"]
+        assert [r["skip_reason"] for r in st.lines(sid)] == ["punct_failed"]
+
+        # A line refine also gave up on carries refine's reason, the later of the two.
+        postmeeting._refine_stage(st, sid, broken)
+        assert [r["skip_reason"] for r in st.lines(sid)] == ["refine_failed"]
     finally:
         st.close()
         jobs.cancel_all(wait=1.0)
