@@ -123,6 +123,9 @@ LINE_COLUMNS = (
     # Duration-weighted mean avg_logprob of the post-meeting decode. NULL for live lines, imported
     # subtitles and anything a human or a rerun has since rewritten.
     ("confidence", "ALTER TABLE line ADD COLUMN confidence REAL"),
+    # Why the last post-meeting pass left this line as it was: punct_failed | refine_failed |
+    # refine_overwrite, '' when it was handled.
+    ("skip_reason", "ALTER TABLE line ADD COLUMN skip_reason TEXT NOT NULL DEFAULT ''"),
 )
 
 

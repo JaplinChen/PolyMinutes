@@ -186,6 +186,14 @@ class Store(SpeakerStore):
             self._bump_rev_for_line(line_id)
             self._db.commit()
 
+    def set_skip_reasons(self, session_id: int, reasons: dict[int, str]) -> None:
+        """Replace the session's per-line skip reasons. Not a content change, so no rev bump."""
+        with self._lock:
+            self._db.execute("UPDATE line SET skip_reason='' WHERE session_id=?", (session_id,))
+            self._db.executemany("UPDATE line SET skip_reason=? WHERE id=?",
+                                 [(r, i) for i, r in reasons.items()])
+            self._db.commit()
+
     def merge_lines(self, keep_id: int, absorb_ids: list[int], source: str,
                     end_time: float | None, translations: dict[str, str]) -> None:
         """Fold VAD-split fragments into their first line.

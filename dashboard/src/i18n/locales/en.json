@@ -91,6 +91,7 @@
     "refineProgress": "{{done}} / {{total}} lines · {{pct}}%",
     "linePending": "pending",
     "lowConfidence": "Low recognition confidence — worth proofreading",
+    "skip": { "punct_failed": "Punctuation failed", "refine_failed": "Refine failed", "refine_overwrite": "Refine changed too much, original kept" },
     "refineSkipped": "{{count}} lines were left without punctuation/refinement",
     "notifyTitle": "PolyMinutes",
     "editLocked": "Locked while refining",

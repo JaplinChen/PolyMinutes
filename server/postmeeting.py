@@ -185,6 +185,7 @@ def _segment_stage(store: Store, session_id: int, chat: Callable[[str], str] | N
     if joined:
         rows = store.lines(session_id)
     punctuated = 0
+    failed: dict[int, str] = {}
     jobs.set_progress(session_id, 0, len(rows))
     for start in range(0, len(rows), refine.CHUNK_LINES):
         chunk = rows[start : start + refine.CHUNK_LINES]
@@ -202,12 +203,14 @@ def _segment_stage(store: Store, session_id: int, chat: Callable[[str], str] | N
                           total=len(rows))
         if out is None:
             jobs.set_progress(session_id, skipped_add=len(chunk))
+            failed.update(dict.fromkeys((r["id"] for r in chunk), "punct_failed"))
             continue
         for row, text in zip(chunk, out):
             # A human-corrected line's punctuation is the human's choice.
             if text != row["source"] and not row["refined"]:
                 store.set_line_source(row["id"], text)
                 punctuated += 1
+    store.set_skip_reasons(session_id, failed)
     log.info("segment stage: %d fragments joined, %d lines punctuated", joined, punctuated)
 
 
@@ -221,6 +224,9 @@ def _refine_stage(store: Store, session_id: int, chat: Callable[[str], str]) -> 
         lines, terms=store.glossary(), coverage=coverage,
         on_progress=lambda done, total: jobs.set_progress(session_id, done=done, total=total))
     jobs.set_progress(session_id, skipped_add=coverage.skipped)
+    reasons = {r["id"]: r["skip_reason"] for r in rows if r.get("skip_reason")}
+    reasons.update({rows[i]["id"]: why for i, why in coverage.reasons.items()})
+    store.set_skip_reasons(session_id, reasons)
     changed = 0
     for row, text in zip(rows, corrected):
         # A refined line is never rewritten twice (update_line's own promise): a human correction is

@@ -190,6 +190,7 @@ export interface TranscriptLine {
   translations: Record<string, string>;
   /** Duration-weighted avg_logprob (<= 0) from post-meeting ASR; null for live/subtitle/edited lines. */
   confidence?: number | null;
+  skip_reason?: '' | 'punct_failed' | 'refine_failed' | 'refine_overwrite';
 }
 
 export const appApi = {

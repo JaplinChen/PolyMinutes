@@ -132,6 +132,9 @@ function Row({ line, speakerOptions, newSpeakerCode, langs, locked, pending, dra
         {/* Marked as well as dimmed: dimming alone reads as a rendering glitch, and the badge is
             what says the raw unpunctuated text below is simply not done yet. */}
         {pending && <span className="sess-pending-badge">{t('sessions.linePending')}</span>}
+        {!pending && line.skip_reason && (
+          <span className="sess-pending-badge">{t(`sessions.skip.${line.skip_reason}`)}</span>
+        )}
         {line.status !== 'ok' && (
           <div className="sess-status">
             <span className="sess-badge">
