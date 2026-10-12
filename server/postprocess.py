@@ -646,7 +646,12 @@ def rewrite_session(store: Store, session_id: int, wav: Path, cfg: config.Config
     # user typed would land on a different person or none at all.
     diarizer = diarize.Diarizer(cfg=cfg, known=diarize.load_known(store))
 
+    # ponytail: fixed bands, not measured — prep 0-30%, decode 30-65%, translate 65-100%.
+    def band(lo: int, hi: int, done: int, total: int) -> None:
+        jobs.set_progress(session_id, done=lo + (hi - lo) * done // max(total, 1), total=100)
+
     utterances = segment(wav)
+    band(0, 30, 1, 30)
     log.info("%d utterances from %s", len(utterances), wav.name)
     if not utterances:
         return []
@@ -654,7 +659,7 @@ def rewrite_session(store: Store, session_id: int, wav: Path, cfg: config.Config
     # Speaker turns where the model for them is installed, clustered whole utterances where it is
     # not. The first also decides the transcript's line boundaries, because a line that runs across
     # a speaker change belongs to neither of them.
-    speaker_turns = diarize.turns(wav)
+    speaker_turns = diarize.turns(wav, progress=lambda d, t: band(1, 28, d, t))
     if speaker_turns:
         # Before anything is labelled: the turn pass splits one long speaker across many labels,
         # and every stage after this — the line's speaker, the voiceprints, whether merge_runs can
@@ -675,8 +680,7 @@ def rewrite_session(store: Store, session_id: int, wav: Path, cfg: config.Config
     def watch(_u: Utterance, done: int, total: int) -> None:
         if stop():
             raise jobs.Cancelled()
-        # ponytail: decode is the first half of the bar, translation the second — one stage, one label.
-        jobs.set_progress(session_id, done=done, total=total * 2)
+        band(30, 65, done, total)
 
     # A recognised voice with a language set is transcribed in it, not in whatever auto-detect
     # guessed — the room's Vietnamese speaker stays Vietnamese, its Chinese speakers stay Chinese.
@@ -693,7 +697,7 @@ def rewrite_session(store: Store, session_id: int, wav: Path, cfg: config.Config
                 u.confidence) for u in utterances)
     n = len(utterances)
     rows = translated_rows(entries, store, cfg, translator, stop,
-                           progress=lambda i: jobs.set_progress(session_id, done=n + i, total=n * 2))
+                           progress=lambda i: band(65, 100, i, n))
 
     # replace_lines deletes the old transcript before inserting the new. An empty result would make
     # that a bare delete — and a re-transcription that decoded nothing (every utterance came back

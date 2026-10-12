@@ -390,7 +390,7 @@ def test_an_empty_retranscription_does_not_wipe_the_existing_transcript(tmp: Pat
         turns = pp.diarize.turns
         pp.asr_gpu.maybe = lambda *a, **k: object()
         pp.diarize.Diarizer = lambda *a, **k: object()
-        pp.diarize.turns = lambda wav: []
+        pp.diarize.turns = lambda wav, progress=None: []
         try:
             raised = False
             try:
