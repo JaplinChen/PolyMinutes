@@ -57,6 +57,8 @@ def _api_key_present() -> bool:
     """Whether translation can run. Separate from _api_key so a status check never burns a rotation
     slot — next_key() advances the cursor and increments the key's request count."""
     cfg: llm.LlmConfig = state["llm"]
+    if cfg.provider == "ollama":
+        return True
     pooled = any(k["provider"] == cfg.provider for k in keys.list())
     return pooled or bool(cfg.api_key) or bool(os.environ.get("ANTHROPIC_API_KEY"))
 
