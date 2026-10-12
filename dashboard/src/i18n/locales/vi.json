@@ -88,7 +88,7 @@
     "stageSegment": "Gộp câu và bổ sung dấu câu",
     "stageRefine": "Tinh chỉnh",
     "stageSummarize": "Đang tạo tóm tắt",
-    "refineProgress": "{{done}} / {{total}} dòng",
+    "refineProgress": "{{done}} / {{total}} dòng · {{pct}}%",
     "linePending": "đang xử lý",
     "lowConfidence": "Độ tin cậy nhận dạng thấp — nên soát lại",
     "refineSkipped": "{{count}} dòng chưa được thêm dấu câu/tinh chỉnh",

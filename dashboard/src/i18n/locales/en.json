@@ -88,7 +88,7 @@
     "stageSegment": "Merging segments and punctuating",
     "stageRefine": "Refining",
     "stageSummarize": "Generating summary",
-    "refineProgress": "{{done}} / {{total}} lines",
+    "refineProgress": "{{done}} / {{total}} lines · {{pct}}%",
     "linePending": "pending",
     "lowConfidence": "Low recognition confidence — worth proofreading",
     "refineSkipped": "{{count}} lines were left without punctuation/refinement",

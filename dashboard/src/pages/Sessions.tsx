@@ -987,7 +987,9 @@ export function Sessions() {
               <span>{jobStage ? stageLabel[jobStage] : t('sessions.refining')}</span>
               {jobTotal > 0 && (
                 <span className="sess-refine-count">
-                  {t('sessions.refineProgress', { done: jobDone, total: jobTotal })}
+                  {jobStage === 'rewrite'
+                    ? `${Math.floor((jobDone / jobTotal) * 100)}%`
+                    : t('sessions.refineProgress', { done: jobDone, total: jobTotal, pct: Math.floor((jobDone / jobTotal) * 100) })}
                 </span>
               )}
             </div>

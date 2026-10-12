@@ -542,7 +542,8 @@ def transcribe_all(utterances: list[Utterance], transcriber: asr.Transcriber,
 
 def translated_rows(entries, store: Store, cfg: config.Config,
                     translator: translate.Translator | None,
-                    stop: Callable[[], bool]) -> list[dict]:
+                    stop: Callable[[], bool],
+                    progress: Callable[[int], None] | None = None) -> list[dict]:
     """Corrected, translated line rows from (start, end_time, speaker, lang, text[, confidence]).
 
     One loop for both ways a transcript comes to exist — decoded from audio or read off a subtitle
@@ -553,9 +554,11 @@ def translated_rows(entries, store: Store, cfg: config.Config,
     corrector = correct.Corrector(terms, store.corrections())
     context: list[translate.Line] = []
     rows: list[dict] = []
-    for start, end_time, speaker, lang, text, *rest in entries:
+    for i, (start, end_time, speaker, lang, text, *rest) in enumerate(entries):
         if stop():
             raise jobs.Cancelled()
+        if progress:
+            progress(i)
         if not text:
             continue
         text = corrector.fix(text)
@@ -669,9 +672,11 @@ def rewrite_session(store: Store, session_id: int, wav: Path, cfg: config.Config
     # different reason. From here on the merged runs are the transcript's lines.
     utterances = merge_runs(utterances, wav)
 
-    def watch(_u: Utterance, _done: int, _total: int) -> None:
+    def watch(_u: Utterance, done: int, total: int) -> None:
         if stop():
             raise jobs.Cancelled()
+        # ponytail: decode is the first half of the bar, translation the second — one stage, one label.
+        jobs.set_progress(session_id, done=done, total=total * 2)
 
     # A recognised voice with a language set is transcribed in it, not in whatever auto-detect
     # guessed — the room's Vietnamese speaker stays Vietnamese, its Chinese speakers stay Chinese.
@@ -686,7 +691,9 @@ def rewrite_session(store: Store, session_id: int, wav: Path, cfg: config.Config
     # transcript, and a failure right after the delete left it holding none.
     entries = ((u.start, u.start + len(u.samples) / config.SAMPLE_RATE, u.speaker, u.lang, u.text,
                 u.confidence) for u in utterances)
-    rows = translated_rows(entries, store, cfg, translator, stop)
+    n = len(utterances)
+    rows = translated_rows(entries, store, cfg, translator, stop,
+                           progress=lambda i: jobs.set_progress(session_id, done=n + i, total=n * 2))
 
     # replace_lines deletes the old transcript before inserting the new. An empty result would make
     # that a bare delete — and a re-transcription that decoded nothing (every utterance came back

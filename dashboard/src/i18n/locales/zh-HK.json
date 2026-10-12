@@ -88,7 +88,7 @@
     "stageSegment": "整併斷句與補標點",
     "stageRefine": "精修",
     "stageSummarize": "產生摘要",
-    "refineProgress": "{{done}} / {{total}} 行",
+    "refineProgress": "{{done}} / {{total}} 行 · {{pct}}%",
     "linePending": "處理中",
     "lowConfidence": "辨識信心低，建議校對",
     "refineSkipped": "有 {{count}} 行未完成標點/精修",
