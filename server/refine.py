@@ -129,8 +129,15 @@ def parse_response(raw: str, lines: list[Line], terms: list[Term] | None = None,
 
     # "Most of the chunk" needs a chunk to be about: on the two or three lines left over at the
     # end of a transcript, one correction is already a majority.
-    if len(lines) >= 4 and len(got) > len(lines) // 2:
-        log.warning("refine rewrote %d of %d lines, keeping originals", len(got), len(lines))
+    # Only real changes count: the model often echoes untouched lines back, and counting those
+    # threw away whole chunks of good corrections — one sampled chunk echoed 16 lines, changed 0.
+    def changed(i: int, text: str) -> bool:
+        line = lines[i - 1]
+        text = text.strip()
+        return (_to_traditional.convert(text) if line.lang.startswith("zh") else text) != line.text
+    rewritten = sum(changed(i, t) for i, t in got.items())
+    if len(lines) >= 4 and rewritten > len(lines) // 2:
+        log.warning("refine rewrote %d of %d lines, keeping originals", rewritten, len(lines))
         if coverage is not None:
             coverage.skipped += len(lines)
         return [l.text for l in lines]

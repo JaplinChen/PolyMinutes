@@ -148,6 +148,12 @@ def test_discarded_chunks_are_counted_not_hidden() -> None:
     refine.parse_response("1: 第0句話有問題", lines, None, None, coverage)
     assert coverage.skipped == 0
 
+    # Echoing untouched lines back is not rewriting them: one real fix among five echoes stands.
+    coverage = refine.Coverage()
+    echoed = chr(10).join(f"{i}: 第{i - 1}句話沒有問題" for i in range(2, 7))
+    out = refine.parse_response("1: 第0句話有問題" + chr(10) + echoed, lines, None, None, coverage)
+    assert coverage.skipped == 0 and out[0] == "第0句話有問題", out
+
 
 def test_a_failed_chunk_is_retried_once_before_keeping_originals() -> None:
     """偶發的模型失敗重試一次就過；連兩次才放棄，且取消例外必須直接往上拋。"""
