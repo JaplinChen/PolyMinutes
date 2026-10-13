@@ -136,7 +136,8 @@ def parse_response(raw: str, lines: list[Line], terms: list[Term] | None = None,
         text = text.strip()
         return (_to_traditional.convert(text) if line.lang.startswith("zh") else text) != line.text
     rewritten = sum(changed(i, t) for i, t in got.items())
-    if len(lines) >= 4 and rewritten > len(lines) // 2:
+    # Two thirds, not half: chunks just past half (14-15 of 25) sampled ~80% real corrections.
+    if len(lines) >= 4 and rewritten > len(lines) * 2 // 3:
         log.warning("refine rewrote %d of %d lines, keeping originals", rewritten, len(lines))
         if coverage is not None:
             coverage.skipped += len(lines)
