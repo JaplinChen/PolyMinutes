@@ -126,6 +126,8 @@ LINE_COLUMNS = (
     # Why the last post-meeting pass left this line as it was: punct_failed | refine_failed |
     # refine_overwrite, '' when it was handled.
     ("skip_reason", "ALTER TABLE line ADD COLUMN skip_reason TEXT NOT NULL DEFAULT ''"),
+    # What the line said before the refiner first rewrote it. NULL means refine never changed it.
+    ("pre_refine", "ALTER TABLE line ADD COLUMN pre_refine TEXT"),
 )
 
 

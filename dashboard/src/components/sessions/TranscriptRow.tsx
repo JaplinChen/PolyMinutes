@@ -89,6 +89,8 @@ function Row({ line, speakerOptions, newSpeakerCode, langs, locked, pending, dra
   const editing = draftText === null ? null : { id: line.id, text: draftText };
   const [shown, setShown] = useState(false);
   const has = langs.some(l => line.translations[l]);
+  // A human edit's diff wins; otherwise show what the refiner changed.
+  const diffBase = line.orig_source || line.pre_refine;
   const unsure = line.confidence != null && line.confidence < LOW_CONFIDENCE;
 
   return (
@@ -182,8 +184,8 @@ function Row({ line, speakerOptions, newSpeakerCode, langs, locked, pending, dra
           >
             {/* A failed re-run clears the text; the dash keeps the paragraph clickable so the
                 correct words can still be typed in by hand. */}
-            {line.orig_source && line.orig_source !== line.source
-              ? charDiff(line.orig_source, line.source).map((seg, idx) =>
+            {diffBase && diffBase !== line.source
+              ? charDiff(diffBase, line.source).map((seg, idx) =>
                   seg.kind === 'same' ? (
                     <span key={idx}>{seg.text}</span>
                   ) : seg.kind === 'del' ? (

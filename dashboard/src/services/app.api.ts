@@ -184,6 +184,8 @@ export interface TranscriptLine {
   source: string;
   /** Pre-edit text kept from the first manual correction, or null when never hand-edited. */
   orig_source: string | null;
+  /** Text before the refiner first rewrote it, or null when refine never changed it. */
+  pre_refine?: string | null;
   refined: number;
   status: LineStatus;
   end_time: number | null;
