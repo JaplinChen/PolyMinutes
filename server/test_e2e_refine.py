@@ -1041,6 +1041,12 @@ def test_a_twice_failed_punctuation_batch_is_counted_as_skipped(tmp: Path) -> No
         # A line refine also gave up on carries refine's reason, the later of the two.
         postmeeting._refine_stage(st, sid, broken)
         assert [r["skip_reason"] for r in st.lines(sid)] == ["refine_failed"]
+
+        # The refiner's rewrite keeps the text it replaced — the first one, across later rewrites.
+        lid = st.lines(sid)[0]["id"]
+        st.update_line(lid, "壞掉的一筆", {})
+        st.update_line(lid, "好的一筆", {})
+        assert st.lines(sid)[0]["pre_refine"] == "壞掉的一批"
     finally:
         st.close()
         jobs.cancel_all(wait=1.0)

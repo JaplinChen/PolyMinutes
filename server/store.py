@@ -165,7 +165,9 @@ class Store(SpeakerStore):
         """Apply a refinement. Marks the line refined so it is never rewritten twice."""
         with self._lock:
             if source is not None:
-                self._db.execute("UPDATE line SET source=? WHERE id=?", (source, line_id))
+                self._db.execute(
+                    "UPDATE line SET pre_refine = CASE WHEN source <> ? THEN COALESCE(pre_refine, source)"
+                    " ELSE pre_refine END, source=? WHERE id=?", (source, source, line_id))
             self._db.executemany(
                 "INSERT INTO line_translation (line_id, lang, text) VALUES (?,?,?) "
                 "ON CONFLICT(line_id, lang) DO UPDATE SET text=excluded.text",
