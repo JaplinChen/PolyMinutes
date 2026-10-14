@@ -22,6 +22,7 @@ export function Capture() {
   const [status, setStatus] = useState<RecordingStatus | null>(null);
   const [devices, setDevices] = useState<AudioDevice[]>([]);
   const [configured, setConfigured] = useState('');
+  const [loopback, setLoopback] = useState('');
   const [deviceError, setDeviceError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [loudestSeen, setLoudestSeen] = useState(0);
@@ -45,7 +46,12 @@ export function Capture() {
     // The server computes this on every config read and the page never asked: with no key set, a
     // recording is transcribed but never translated, and the only mention was a server-side log
     // line. A supported mode — so a warning with the way to fix it, not a refusal.
-    appApi.getConfig().then(c => setTranslatorReady(c.translatorReady)).catch(() => undefined);
+    appApi
+      .getConfig()
+      .then(c => {
+        setTranslatorReady(c.translatorReady);
+        setLoopback(c.loopbackDevice);
+      }).catch(() => undefined);
     const tick = () =>
       appApi
         .recordingStatus()
@@ -59,10 +65,11 @@ export function Capture() {
     return () => window.clearInterval(id);
   }, []);
 
-  const selectDevice = async (name: string) => {
+  const selectDevice = async (patch: { inputDevice?: string; loopbackDevice?: string }) => {
     setBusy(true);
     try {
-      await appApi.putConfig({ inputDevice: name });
+      const c = await appApi.putConfig(patch);
+      setLoopback(c.loopbackDevice);
       await loadDevices();
     } catch (err) {
       fail(err);
@@ -131,10 +138,29 @@ export function Capture() {
           className="capture-select"
           aria-label={t('capture.device')}
           value={configured}
-          onChange={e => selectDevice(e.target.value)}
+          onChange={e => selectDevice({ inputDevice: e.target.value })}
           disabled={busy || recording}
         >
           <option value="">{t('capture.systemDefault')}</option>
+          {devices.map(d => (
+            <option key={`${d.index}-${d.hostapi}`} value={d.name}>
+              {d.name} — {d.hostapi}
+            </option>
+          ))}
+        </select>
+      </section>
+
+      <section className="etable-panel">
+        <h3 className="etable-panel-title">{t('capture.loopback')}</h3>
+        <p className="capture-hint">{t('capture.loopbackHint')}</p>
+        <select
+          className="capture-select"
+          aria-label={t('capture.loopback')}
+          value={loopback}
+          onChange={e => selectDevice({ loopbackDevice: e.target.value })}
+          disabled={busy || recording}
+        >
+          <option value="">{t('capture.loopbackNone')}</option>
           {devices.map(d => (
             <option key={`${d.index}-${d.hostapi}`} value={d.name}>
               {d.name} — {d.hostapi}

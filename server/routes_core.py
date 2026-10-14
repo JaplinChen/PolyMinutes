@@ -34,6 +34,7 @@ def get_config() -> dict:
     return {
         "languages": cfg.languages,
         "inputDevice": cfg.input_device,
+        "loopbackDevice": cfg.loopback_device,
         "whisperModel": cfg.whisper_model,
         "availableModels": config.available_whisper_models(),
         "pinnedLanguages": cfg.pinned_languages,
@@ -81,6 +82,8 @@ def put_config(body: dict) -> dict:
 
     if "inputDevice" in body:
         pending["input_device"] = str(body["inputDevice"])
+    if "loopbackDevice" in body:
+        pending["loopback_device"] = str(body["loopbackDevice"])
     if "whisperModel" in body:
         pending["whisper_model"] = str(body["whisperModel"])
     if "pinnedLanguages" in body:

@@ -55,6 +55,7 @@ export interface LearnedCorrection {
 export interface AppConfig {
   languages: string[];
   inputDevice: string;
+  loopbackDevice: string;
   whisperModel: string;
   availableModels: string[];
   pinnedLanguages: Record<string, string>;
