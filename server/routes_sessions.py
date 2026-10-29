@@ -183,11 +183,13 @@ def delete_session(session_id: int) -> dict:
                 path.unlink(missing_ok=True)
             except OSError:
                 log.warning("could not remove video %s", path)
-    try:
-        wav.unlink(missing_ok=True)
-    except OSError:
-        # The rows are gone either way; a wav Windows still holds open is lost disk, not a failure.
-        log.warning("could not remove recording %s", wav)
+    # The second channel and the turn sidecar share the wav's name; left behind they are orphans.
+    for path in (wav, wav.with_suffix(".loopback.wav"), wav.with_name(wav.name + ".turns.json")):
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            # The rows are gone either way; a file Windows still holds open is lost disk, not a failure.
+            log.warning("could not remove recording %s", path)
     return {"deleted": session_id}
 
 
