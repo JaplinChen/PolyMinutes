@@ -21,6 +21,7 @@ export function Capture() {
 
   const [status, setStatus] = useState<RecordingStatus | null>(null);
   const [devices, setDevices] = useState<AudioDevice[]>([]);
+  const [outputs, setOutputs] = useState<string[]>([]);
   const [configured, setConfigured] = useState('');
   const [loopback, setLoopback] = useState('');
   const [deviceError, setDeviceError] = useState<string | null>(null);
@@ -36,6 +37,7 @@ export function Capture() {
       .devices()
       .then(d => {
         setDevices(d.devices);
+        setOutputs(d.outputs ?? []);
         setConfigured(d.configured);
         setDeviceError(d.error);
       })
@@ -161,6 +163,11 @@ export function Capture() {
           disabled={busy || recording}
         >
           <option value="">{t('capture.loopbackNone')}</option>
+          {outputs.map(name => (
+            <option key={name} value={`system-output:${name}`}>
+              {t('capture.loopbackSystem')} — {name}
+            </option>
+          ))}
           {devices.map(d => (
             <option key={`${d.index}-${d.hostapi}`} value={d.name}>
               {d.name} — {d.hostapi}

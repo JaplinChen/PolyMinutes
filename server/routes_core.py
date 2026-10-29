@@ -6,7 +6,7 @@ from dataclasses import asdict
 
 from fastapi import APIRouter, HTTPException
 
-from . import audio, config, main
+from . import audio, config, loopback, main
 
 router = APIRouter()
 
@@ -24,7 +24,8 @@ def devices() -> dict:
         error = None
     except audio.DeviceNotFound as exc:
         selected, error = None, str(exc)
-    return {"devices": audio.list_input_devices(), "configured": cfg.input_device,
+    return {"devices": audio.list_input_devices(), "outputs": loopback.list_output_devices(),
+            "configured": cfg.input_device,
             "selected": selected, "error": error}
 
 
