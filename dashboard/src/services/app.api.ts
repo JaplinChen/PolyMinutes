@@ -201,7 +201,7 @@ export const appApi = {
   putConfig: (body: Partial<AppConfig>) => request<AppConfig>('/config', { method: 'PUT', body: JSON.stringify(body) }),
 
   devices: () =>
-    request<{ devices: AudioDevice[]; configured: string; selected: number | null; error: string | null }>('/devices'),
+    request<{ devices: AudioDevice[]; outputs: string[]; configured: string; selected: number | null; error: string | null }>('/devices'),
 
   glossary: () => request<GlossaryTerm[]>('/glossary'),
   addTerm: (body: Partial<GlossaryTerm>) =>

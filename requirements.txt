@@ -1,6 +1,7 @@
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 sounddevice==0.5.1
+soundcard==0.4.6; sys_platform == "win32"
 soundfile==0.12.1
 numpy==2.2.1
 sherpa-onnx==1.13.4

@@ -18,7 +18,7 @@ import sounddevice as sd
 import soundfile as sf
 import soxr
 
-from . import config
+from . import config, loopback
 
 
 class DeviceNotFound(Exception):
@@ -56,7 +56,17 @@ _HOSTAPI_RANK = {"Core Audio": 0, "Windows WASAPI": 1, "Windows WDM-KS": 2, "Win
 FIRST_BLOCK_TIMEOUT = 1.0
 
 
-def candidate_devices(name_fragment: str) -> list[int | None]:
+# Pseudo-device: what a speaker is playing, captured via WASAPI loopback. Spares the user a virtual
+# cable and a mixer just to hear the meeting while it is recorded. "system-output" alone is the
+# default speaker; "system-output:<name>" picks one, since Teams often plays elsewhere.
+SYSTEM_OUTPUT = "system-output"
+
+
+def is_system_output(name: str) -> bool:
+    return name == SYSTEM_OUTPUT or name.startswith(SYSTEM_OUTPUT + ":")
+
+
+def candidate_devices(name_fragment: str) -> "list[int | None | str]":
     """Every device matching the name, best host API first. `[None]` means the system default.
 
     Returns a list rather than one index because a device that PortAudio lists is not necessarily
@@ -69,6 +79,8 @@ def candidate_devices(name_fragment: str) -> list[int | None]:
     """
     if not name_fragment:
         return [None]
+    if is_system_output(name_fragment):
+        return [name_fragment]
 
     needle = name_fragment.casefold()
     matches = [d for d in list_input_devices() if needle in d["name"].casefold()]
@@ -93,6 +105,8 @@ def device_format(device: int | None) -> tuple[int, int]:
     device's own rate, and virtual cables commonly run at 44.1 or 48 kHz. So capture native and
     convert afterwards rather than asking the driver for something it will refuse.
     """
+    if isinstance(device, str):
+        return loopback.RATE, loopback.CHANNELS
     info = sd.query_devices(sd.default.device[0] if device is None else device)
     rate = int(info["default_samplerate"]) or config.SAMPLE_RATE
     # Two channels is plenty to downmix from; asking for more of a multichannel device is wasted work.
@@ -208,19 +222,25 @@ class Recorder:
         for device in self._candidates:
             self.rate, self.channels = device_format(device)
             stream = None
+            # blocksize scales with the native rate so each callback still covers ~100 ms.
+            blocksize = int(config.BLOCK_SIZE * self.rate / config.SAMPLE_RATE)
             try:
-                # blocksize scales with the native rate so each callback still covers ~100 ms.
-                stream = sd.InputStream(
-                    samplerate=self.rate,
-                    channels=self.channels,
-                    blocksize=int(config.BLOCK_SIZE * self.rate / config.SAMPLE_RATE),
-                    device=device,
-                    dtype="float32",
-                    callback=self._callback,
-                )
+                if isinstance(device, str):
+                    stream = loopback.LoopbackStream(device, blocksize, self._callback)
+                else:
+                    stream = sd.InputStream(
+                        samplerate=self.rate,
+                        channels=self.channels,
+                        blocksize=blocksize,
+                        device=device,
+                        dtype="float32",
+                        callback=self._callback,
+                    )
                 self._first_block.clear()
                 stream.start()
                 if not self._first_block.wait(FIRST_BLOCK_TIMEOUT):
+                    if getattr(stream, "_error", None):
+                        raise stream._error
                     raise RuntimeError(f"opened but delivered no audio within {FIRST_BLOCK_TIMEOUT}s")
                 self.device = device
                 return stream
