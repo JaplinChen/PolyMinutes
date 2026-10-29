@@ -137,6 +137,9 @@ def test_an_identified_voice_survives_its_meetings_deletion(client: TestClient) 
     wav = config.RECORDINGS_DIR / "kept-voice.wav"
     wav.parent.mkdir(parents=True, exist_ok=True)
     sf.write(str(wav), np.zeros(config.SAMPLE_RATE * 10, dtype="float32"), config.SAMPLE_RATE)
+    siblings = [wav.with_suffix(".loopback.wav"), wav.with_name(wav.name + ".turns.json")]
+    for path in siblings:
+        path.write_bytes(b"x")
 
     session = main.store.start_session("now", str(wav))
     main.store.add_line(session, 1.0, "S1", "zh", "這段話夠長，聽得出是誰", {}, end_time=6.0)
@@ -146,6 +149,7 @@ def test_an_identified_voice_survives_its_meetings_deletion(client: TestClient) 
     assert client.get(f"/api/speakers/known/%E6%9E%97%E4%BF%9D%E7%95%99/clip?session={session}").status_code == 200
     assert client.delete(f"/api/sessions/{session}").status_code == 200
     assert not wav.exists()
+    assert not any(path.exists() for path in siblings)
 
     # The meeting and its wav are gone; the voice still plays, from the harvested clip.
     clip = client.get(f"/api/speakers/known/%E6%9E%97%E4%BF%9D%E7%95%99/clip?session={session}")
