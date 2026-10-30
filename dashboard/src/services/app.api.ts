@@ -90,6 +90,8 @@ export interface RecordingStatus {
   sessionId: number | null;
   backlog: number;
   errors: number;
+  /** Set when speaker loopback stopped mid-recording; the mic keeps going without it. */
+  loopbackError: string | null;
 }
 
 /** Where a session's post-meeting pass got to. `idle` means there has not been one this run. */

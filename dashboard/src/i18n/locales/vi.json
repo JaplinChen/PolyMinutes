@@ -40,6 +40,8 @@
     "loopback": "Âm thanh cuộc họp (loopback)",
     "loopbackHint": "Kênh thứ hai tùy chọn cho người tham gia từ xa. Chọn \"Âm thanh phát ra loa\" của loa mà Teams đang dùng: ghi trực tiếp đầu ra đó, không cần cáp ảo. Tách riêng với micro để người nói không bị lẫn giữa hai kênh.",
     "loopbackSystem": "Âm thanh phát ra loa",
+    "loopbackFailed": "Thu âm loa đã dừng giữa chừng ({{error}}). Người tham gia từ xa không còn được ghi; hãy dừng và kiểm tra thiết bị phát.",
+    "loopbackMissing": "{{name}} (không tìm thấy)",
     "loopbackNone": "Không dùng (chỉ micro)",
     "systemDefault": "Mặc định hệ thống",
     "level": "Mức âm và trạng thái",

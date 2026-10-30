@@ -40,6 +40,8 @@
     "loopback": "會議聲音（loopback）",
     "loopbackHint": "選填的第二個收音通道，收線上與會者的聲音。選 Teams 正在用的那個「喇叭播放聲音」，會直接錄下該喇叭播出的內容，不需要虛擬音效線。與麥克風分開，講者不會跨通道混在一起。",
     "loopbackSystem": "喇叭播放聲音",
+    "loopbackFailed": "喇叭收音在錄音途中中斷（{{error}}），遠端與會者已不再被錄到；請停止錄音並檢查播放裝置。",
+    "loopbackMissing": "{{name}}（找不到裝置）",
     "loopbackNone": "不使用（只錄麥克風）",
     "systemDefault": "系統預設",
     "level": "音量與狀態",

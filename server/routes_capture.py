@@ -95,8 +95,9 @@ def recording_status() -> dict:
     rec, pipe = main.state["recorder"], main.state["pipeline"]
     if not rec:
         return {"recording": False, "path": None, "seconds": 0.0, "peak": 0.0,
-                "droppedBlocks": 0, "sessionId": None, "backlog": 0, "errors": 0}
+                "droppedBlocks": 0, "sessionId": None, "backlog": 0, "errors": 0, "loopbackError": None}
     s = rec.status()
+    loop = main.state["loopback"]
     return {
         "recording": s.recording,
         "path": s.path,
@@ -106,6 +107,7 @@ def recording_status() -> dict:
         "sessionId": main.state["session"],
         "backlog": pipe.tap.qsize() if pipe else 0,
         "errors": pipe.errors if pipe else 0,
+        "loopbackError": loop.status().error if loop else None,
     }
 
 
