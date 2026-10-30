@@ -77,7 +77,7 @@ def test_system_output_bypasses_portaudio() -> None:
 
 
 def test_a_stream_that_died_reports_why() -> None:
-    rec = audio.Recorder([None])
+    rec = audio.Recorder(["system-output"])  # CI has no PortAudio device to query
     assert rec.status().error is None
     rec._stream = type("Dead", (), {"_error": OSError("speaker unplugged")})()
     assert rec.status().error == "speaker unplugged"
