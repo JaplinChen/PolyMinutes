@@ -129,6 +129,7 @@ class RecorderStatus:
     seconds: float
     peak: float  # 0.0-1.0 of the most recent block; 0.0 for a long stretch means no audio is arriving
     dropped_blocks: int
+    error: str | None = None  # a stream that died mid-recording, e.g. its speaker unplugged
 
 
 class Recorder:
@@ -291,6 +292,7 @@ class Recorder:
             seconds=self._frames / config.SAMPLE_RATE,
             peak=self._peak,
             dropped_blocks=self._dropped,
+            error=str(err) if (err := getattr(self._stream, "_error", None)) else None,
         )
 
 

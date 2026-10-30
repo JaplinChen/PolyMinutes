@@ -93,6 +93,11 @@ export function Capture() {
   };
 
   const recording = status?.recording ?? false;
+  // A saved speaker that is no longer plugged in would otherwise render as "none" and then fail on start.
+  const loopbackMissing =
+    !!loopback &&
+    !outputs.some(name => `system-output:${name}` === loopback) &&
+    !devices.some(d => d.name === loopback);
   // The failure this catches: "no output" achieved by muting the playback device, which makes
   // loopback capture silent. Without this the meeting looks fine until the transcript is empty.
   const silent = recording && status!.seconds > SILENT_AFTER_SECONDS && loudestSeen < SILENT_PEAK;
@@ -133,6 +138,13 @@ export function Capture() {
         </div>
       )}
 
+      {recording && status!.loopbackError && (
+        <div className="capture-alert" role="alert">
+          <AlertTriangle size={18} />
+          <span>{t('capture.loopbackFailed', { error: status!.loopbackError })}</span>
+        </div>
+      )}
+
       <section className="etable-panel">
         <h3 className="etable-panel-title">{t('capture.device')}</h3>
         <p className="capture-hint">{t('capture.deviceHint')}</p>
@@ -163,6 +175,7 @@ export function Capture() {
           disabled={busy || recording}
         >
           <option value="">{t('capture.loopbackNone')}</option>
+          {loopbackMissing && <option value={loopback}>{t('capture.loopbackMissing', { name: loopback.replace(/^system-output:/, '') })}</option>}
           {outputs.map(name => (
             <option key={name} value={`system-output:${name}`}>
               {t('capture.loopbackSystem')} — {name}

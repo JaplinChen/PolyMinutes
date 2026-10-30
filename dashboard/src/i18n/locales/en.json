@@ -40,6 +40,8 @@
     "loopback": "Meeting audio (loopback)",
     "loopbackHint": "Optional second channel for remote participants. Pick \"Speaker playback\" for the speaker Teams plays on: it records that output directly, no virtual cable needed. Kept separate from the mic so speakers never mix across channels.",
     "loopbackSystem": "Speaker playback",
+    "loopbackFailed": "Speaker capture stopped mid-recording ({{error}}). Remote participants are no longer being recorded; stop and check the playback device.",
+    "loopbackMissing": "{{name}} (not found)",
     "loopbackNone": "None (mic only)",
     "systemDefault": "System default",
     "level": "Level and status",

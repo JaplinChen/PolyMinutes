@@ -76,6 +76,13 @@ def test_system_output_bypasses_portaudio() -> None:
     assert not audio.is_system_output("system-outputs")
 
 
+def test_a_stream_that_died_reports_why() -> None:
+    rec = audio.Recorder(["system-output"])  # CI has no PortAudio device to query
+    assert rec.status().error is None
+    rec._stream = type("Dead", (), {"_error": OSError("speaker unplugged")})()
+    assert rec.status().error == "speaker unplugged"
+
+
 def test_config_defaults_and_env_override() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         missing = Path(tmp) / "absent.json"
