@@ -67,6 +67,15 @@ def test_empty_fragment_yields_the_default_only() -> None:
     assert audio.candidate_devices("") == [None]
 
 
+def test_system_output_bypasses_portaudio() -> None:
+    # A speaker name like "Stereo Mix" must not fall through to the input-device search.
+    with patch.object(audio, "list_input_devices", side_effect=AssertionError("searched inputs")):
+        for name in ("system-output", "system-output:Speakers (Realtek: USB)"):
+            assert audio.candidate_devices(name) == [name]
+            assert audio.device_format(name) == (audio.loopback.RATE, audio.loopback.CHANNELS)
+    assert not audio.is_system_output("system-outputs")
+
+
 def test_config_defaults_and_env_override() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         missing = Path(tmp) / "absent.json"
